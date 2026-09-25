@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Retratos procedurales</title>
+<title>Forja de Retratos</title>
 <style>
   :root {
     --bg: #14110f;
@@ -12,6 +12,7 @@
     --muted: #a3927a;
     --accent: #d08a3c;
     --frame: #5a4632;
+    color-scheme: dark;
   }
   * { box-sizing: border-box; }
   body {
@@ -51,6 +52,8 @@
     padding: 8px 14px; font: inherit; cursor: pointer;
   }
   button:hover { background: #4a3827; border-color: var(--accent); }
+  button:focus-visible, select:focus-visible, input:focus-visible, .thumb:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .combos { color: var(--muted); font-size: 0.85rem; margin: -16px 0 24px; font-variant-numeric: tabular-nums; }
   ul.traits { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px; }
   ul.traits li { background: var(--panel); border: 1px solid var(--frame); border-radius: 999px; padding: 4px 10px; font-size: 0.85rem; }
   .preset-tag { display: none; margin-bottom: 12px; font-size: 0.85rem; color: var(--accent); }
@@ -59,14 +62,16 @@
   .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 14px; }
   .thumb { cursor: pointer; padding: 5px; transition: transform 0.15s; }
   .thumb:hover { transform: translateY(-3px); }
+  @media (prefers-reduced-motion: reduce) { .thumb, .thumb:hover { transition: none; transform: none; } }
   .thumb .seed { font-size: 0.72rem; color: var(--muted); text-align: center; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .err { color: #ff8a7a; }
 </style>
 </head>
 <body>
 <main>
-  <h1>Retratos procedurales</h1>
+  <h1>Forja de Retratos</h1>
   <p class="sub">Misma semilla, mismo personaje. Todo se pinta con un shader de ruido, sin imágenes.</p>
+  <p class="combos" id="combos"></p>
 
   <div class="hero">
     <div class="frame" id="main"><canvas id="big" width="512" height="640"></canvas></div>
@@ -1536,6 +1541,56 @@ const LABELS = {
   horns: [null, 'Cuernos hacia atrás', 'Cuernos altos', 'Cuernos cortos', 'Astas de dragón'],
 };
 
+// ---- Generator switches: anything listed here is never generated.
+// Ids are the ones in the catalogs above/below (see README.md). Pinned presets (sakura) ignore this.
+const DISABLED = {
+  races: [],       // 'human' | 'elf' | 'dragon' | 'duende'
+  classes: [],     // 'mage' | 'warrior' | 'ranger' | 'survivor'
+  hairStyles: [],  // index in HAIR_STYLES
+  hats: [],        // index in HATS (0 = sin sombrero)
+  outfits: [],     // index in LABELS.outfit
+  props: [],       // index in LABELS.prop (0 = sin objeto)
+  eyeShapes: [],   // index in LABELS.eyeShape
+  pupils: [],      // index in LABELS.pupil (0 = redonda)
+  ornaments: [],   // index in LABELS.ornament
+  marks: [],       // index in LABELS.mark
+  horns: [],       // index in LABELS.horns
+  glasses: [],     // index in LABELS.glasses
+  patterns: [],    // index in LABELS.pattern
+  features: [],    // 'amulet' 'earrings' 'eyepatch' 'glasses' 'mask' 'scarf' 'fang' 'mole' 'freckles'
+                   // 'scar' 'hetero' 'glowEyes' 'ahoge' 'fur' 'beard' 'scales'
+};
+// Fallback when every option of a category is disabled.
+const FALLBACK = { races: 'human', classes: 'mage', hairStyles: 0, hats: 0, outfits: 0, props: 0, eyeShapes: 0, ornaments: 0, horns: 0, glasses: 0 };
+
+// What each class can wear and carry: [id, weight]. Higher weight = more frequent, 0 = never.
+const KITS = {
+  mage: {
+    outfits: [[0, 3], [4, 1.5]],
+    hats: (F, outfit) => [[1, 3], [2, 1.5], [4, 1.5], [3, 1.2], [11, F ? 1.2 : 0.4], [6, 0.3], [0, 1.2]],
+    props: outfit => [[1, 3], [7, 1.5], [8, 1.5], [0, 1]],
+    amulet: 0.6,
+  },
+  warrior: {
+    outfits: [[1, 3], [5, 2]],
+    hats: (F, outfit) => outfit === 5 ? [[8, 3], [7, 2], [0, 2]] : [[5, 2.5], [7, 1], [4, 0.7], [0, 3]],
+    props: outfit => [[2, outfit === 5 ? 0.5 : 2], [4, outfit === 5 ? 4 : 1], [6, 1.5], [10, 1], [9, 1], [0, 1]],
+    amulet: 0.15,
+  },
+  ranger: {
+    outfits: [[2, 3], [4, 1]],
+    hats: (F, outfit) => [[3, 3], [9, 2], [6, 1.2], [7, 0.8], [0, 2.5]],
+    props: outfit => [[3, 2.5], [5, 2], [4, 0.7], [10, 0.5], [0, 1]],
+    amulet: 0.2,
+  },
+  survivor: {
+    outfits: [[3, 1]],
+    hats: (F, outfit) => [[3, 2], [10, 2], [6, 1], [7, 1], [0, 3]],
+    props: outfit => [[9, 2], [10, 1.5], [2, 1], [5, 1], [3, 0.8], [0, 2]],
+    amulet: 0.25,
+  },
+};
+
 const NAME_PARTS = {
   human: { a: ['Sa', 'Ha', 'Yu', 'Ai', 'Mi', 'Ka', 'Ro', 'Le', 'Ed', 'Al', 'Ren', 'Ta'], f: ['kura', 'na', 'ki', 'ko', 'mi', 'ria', 'lena'], m: ['ro', 'ta', 'ji', 'suke', 'ric', 'dan', 'mar'] },
   elf: { a: ['Ae', 'Lae', 'Syl', 'Tha', 'Ely', 'Fae', 'Ith'], f: ['thiel', 'wen', 'riel', 'lindë', 'nya'], m: ['lion', 'ndor', 'ras', 'thil', 'mir'] },
@@ -1550,17 +1605,20 @@ function genCharacter(seed, o = {}) {
   const r = (a, b) => a + (b - a) * rng();
   const pick = a => a[Math.floor(rng() * a.length)];
   const chance = x => rng() < x;
-  const wpick = opts => {
+  const wpick = (opts, kind) => {
+    if (kind) opts = opts.filter(([v, wgt]) => wgt > 0 && !DISABLED[kind].includes(v));
+    if (!opts.length) return FALLBACK[kind];
+    if (opts.length === 1) return opts[0][0];
     let t = rng() * opts.reduce((s, x) => s + x[1], 0);
     for (const [v, wgt] of opts) { if ((t -= wgt) < 0) return v; }
     return opts[opts.length - 1][0];
   };
   const jit = (c, a) => c.map(v => Math.min(1, Math.max(0, v + (rng() - 0.5) * a)));
 
-  const race = o.race || wpick([['human', 4], ['elf', 2.5], ['dragon', 2], ['duende', 2]]);
+  const race = o.race || wpick([['human', 4], ['elf', 2.5], ['dragon', 2], ['duende', 2]], 'races');
   const sex = o.sex || (chance(0.5) ? 'f' : 'm');
   const age = o.age || wpick([['young', 3.5], ['adult', 4], ['old', 2.5]]);
-  const cls = o.cls || pick(['mage', 'warrior', 'ranger', 'survivor']);
+  const cls = o.cls || wpick([['mage', 1], ['warrior', 1], ['ranger', 1], ['survivor', 1]], 'classes');
   const F = sex === 'f';
   const old = age === 'old', young = age === 'young';
 
@@ -1587,36 +1645,12 @@ function genCharacter(seed, o = {}) {
   hair = jit(hair, 0.04);
 
   // ---- class kit
-  const kit = {
-    mage: () => ({
-      outfit: wpick([[0, 3], [4, 1.5]]),
-      hat: wpick([[1, 3], [2, 1.5], [4, 1.5], [3, 1.2], [11, F ? 1.2 : 0.4], [6, 0.3], [0, 1.2]]),
-      prop: wpick([[1, 3], [7, 1.5], [8, 1.5], [0, 1]]),
-      amulet: chance(0.6),
-    }),
-    warrior: () => {
-      const outfit = wpick([[1, 3], [5, 2]]);
-      const samurai = outfit === 5;
-      return {
-        outfit,
-        hat: samurai ? wpick([[8, 3], [7, 2], [0, 2]]) : wpick([[5, 2.5], [7, 1], [4, 0.7], [0, 3]]),
-        prop: wpick([[2, samurai ? 0.5 : 2], [4, samurai ? 4 : 1], [6, 1.5], [10, 1], [9, 1], [0, 1]]),
-        amulet: chance(0.15),
-      };
-    },
-    ranger: () => ({
-      outfit: wpick([[2, 3], [4, 1]]),
-      hat: wpick([[3, 3], [9, 2], [6, 1.2], [7, 0.8], [0, 2.5]]),
-      prop: wpick([[3, 2.5], [5, 2], [4, 0.7], [10, 0.5], [0, 1]]),
-      amulet: chance(0.2),
-    }),
-    survivor: () => ({
-      outfit: 3,
-      hat: wpick([[3, 2], [10, 2], [6, 1], [7, 1], [0, 3]]),
-      prop: wpick([[9, 2], [10, 1.5], [2, 1], [5, 1], [3, 0.8], [0, 2]]),
-      amulet: chance(0.25),
-    }),
-  }[cls]();
+  const K = KITS[cls];
+  const kit = {};
+  kit.outfit = wpick(K.outfits, 'outfits');
+  kit.hat = wpick(K.hats(F, kit.outfit), 'hats');
+  kit.prop = wpick(K.props(kit.outfit), 'props');
+  kit.amulet = chance(K.amulet);
 
   const cloth = {
     mage: () => hsl(pick([0.6, 0.66, 0.75, 0.83, 0.0, 0.45, 0.95]) + r(-0.02, 0.02), r(0.35, 0.6), r(0.22, 0.38)),
@@ -1669,8 +1703,8 @@ function genCharacter(seed, o = {}) {
   const noseBase = { human: r(0.9, 1.15), elf: r(0.8, 0.95), dragon: r(0.85, 1.05), duende: r(1.5, 1.9) }[race];
 
   const hairStyle = F
-    ? wpick([[2, 2], [4, 1.5], [5, 1], [6, 1.5], [7, 1.5], [8, 1.2], [10, 1.2], [3, 1], [1, 0.6], [12, 1.2], [9, 0.3]])
-    : wpick([[1, 3], [9, 2], [7, 1], [11, 1.2], [2, 1], [3, 0.6], [0, old ? 2.5 : 0.4], [10, 0.3], [12, 0.4]]);
+    ? wpick([[2, 2], [4, 1.5], [5, 1], [6, 1.5], [7, 1.5], [8, 1.2], [10, 1.2], [3, 1], [1, 0.6], [12, 1.2], [9, 0.3]], 'hairStyles')
+    : wpick([[1, 3], [9, 2], [7, 1], [11, 1.2], [2, 1], [3, 0.6], [0, old ? 2.5 : 0.4], [10, 0.3], [12, 0.4]], 'hairStyles');
   const beardP = race === 'elf' ? 0.08 : race === 'dragon' ? 0.2 : young ? 0.15 : 0.5;
 
   let mark = 0;
@@ -1679,7 +1713,7 @@ function genCharacter(seed, o = {}) {
   else if (race === 'elf' && chance(0.3)) mark = 5;
   else if (cls === 'mage' && chance(0.25)) mark = 4;
 
-  const glasses = chance(cls === 'mage' ? (old ? 0.3 : 0.1) : 0.03) ? wpick([[1, 2], [2, old ? 2 : 0.7]]) : 0;
+  const glasses = chance(cls === 'mage' ? (old ? 0.3 : 0.1) : 0.03) ? wpick([[1, 2], [2, old ? 2 : 0.7]], 'glasses') : 0;
   const mask = chance({ ranger: 0.22, survivor: 0.15, warrior: 0.05, mage: 0.02 }[cls]);
 
   const p = {
@@ -1708,14 +1742,14 @@ function genCharacter(seed, o = {}) {
     earrings: chance(F ? 0.5 : 0.15) ? 1 : 0,
     nose: noseBase * (F ? 0.9 : 1),
     bodyW: (race === 'duende' ? 0.82 : 1) * (F ? 0.9 : 1),
-    horns: race === 'dragon' ? wpick([[1, 3], [2, 2], [3, 2], [4, 1.5]]) : 0,
+    horns: race === 'dragon' ? wpick([[1, 3], [2, 2], [3, 2], [4, 1.5]], 'horns') : 0,
     freckles: chance(young ? 0.35 : 0.12) ? 1 : 0,
     hatTilt: r(-1, 1),
     propSide: chance(0.5) ? 1 : -1,
     fur: kit.outfit === 3 && chance(0.6) ? 1 : 0,
     ahoge: chance(young ? 0.3 : 0.15) ? 1 : 0,
     ornament: 0,
-    eyeShape: wpick([[0, 3], [1, 1.5], [2, 1.2], [3, F ? 2 : 0.8], [4, 0.8]]),
+    eyeShape: wpick([[0, 3], [1, 1.5], [2, 1.2], [3, F ? 2 : 0.8], [4, 0.8]], 'eyeShapes'),
     pupil: race === 'dragon' ? (chance(0.8) ? 1 : 0) : (cls === 'mage' && chance(0.08) ? 2 : 0),
     eyepatch: !glasses && chance(cls === 'warrior' || cls === 'survivor' ? 0.1 : 0.02) ? 1 : 0,
     glasses,
@@ -1733,9 +1767,9 @@ function genCharacter(seed, o = {}) {
   if (p.outfit === 4 && chance(0.7)) p.pattern = 1 + Math.floor(rng() * 3);
   if (p.hairStyle !== 0 && chance(F ? 0.55 : 0.06)) {
     const hs = p.hairStyle;
-    if (hs === 3 || hs === 5) p.ornament = wpick([[2, 3], [1, 1], [4, 1]]);
-    else if (hs === 6 || hs === 7) p.ornament = wpick([[1, 3], [3, 1], [4, 0.5]]);
-    else p.ornament = wpick([[1, 1.5], [2, 1.2], [3, 1.5], [4, 1.2]]);
+    if (hs === 3 || hs === 5) p.ornament = wpick([[2, 3], [1, 1], [4, 1]], 'ornaments');
+    else if (hs === 6 || hs === 7) p.ornament = wpick([[1, 3], [3, 1], [4, 0.5]], 'ornaments');
+    else p.ornament = wpick([[1, 1.5], [2, 1.2], [3, 1.5], [4, 1.2]], 'ornaments');
   }
   if (p.hat === 7) acc = pick([[0.9,0.88,0.85],[0.75,0.15,0.15],[0.12,0.12,0.14]]);
   let hatC;
@@ -1744,6 +1778,11 @@ function genCharacter(seed, o = {}) {
   else if (p.hat === 10) hatC = fur;
   else if ((p.hat === 1 || p.hat === 2) && cls === 'mage' && chance(0.5)) hatC = hsl(r(0, 1), r(0.3, 0.55), r(0.2, 0.35));
   else hatC = mul(cloth, 0.85);
+
+  if (DISABLED.marks.includes(p.mark)) p.mark = 0;
+  if (DISABLED.pupils.includes(p.pupil)) p.pupil = 0;
+  if (DISABLED.patterns.includes(p.pattern)) p.pattern = 0;
+  for (const f of DISABLED.features) p[f] = 0;
 
   const colors = { skin, hair, cloth, trim, hat: hatC, bg, eye, eye2, light, paint, metal: metalC, leather, magic, lip, horn, fur, scale, acc, lacq };
   Object.assign(colors, o.colors || {});
@@ -1785,6 +1824,37 @@ function genCharacter(seed, o = {}) {
   PARAMS.forEach((k, i) => { Q[i] = p[k]; });
 
   return { name, title: `${LABELS.cls[cls][g]} · ${LABELS.race[race][g]}`, traits, Q, noiseSeed, colors };
+}
+
+// Discrete trait combinations reachable by the generator (colours and continuous
+// face proportions not included). Follows KITS and DISABLED, so it updates when you disable things.
+function countCombinations() {
+  const ok = (kind, v) => !DISABLED[kind].includes(v);
+  const on = f => !DISABLED.features.includes(f);
+  const bin = f => (on(f) ? 2 : 1);
+  const n = (kind, ids) => Math.max(1, ids.filter(v => ok(kind, v)).length);
+  const range = k => Array.from({ length: k }, (_, i) => i);
+  let races = 0;
+  for (const r of Object.keys(RACE_ID)) if (ok('races', r)) races += r === 'dragon' ? n('horns', [1, 2, 3, 4]) * 3 * bin('scales') : 1;
+  const sexes = 1 + bin('beard');
+  let kits = 0;
+  for (const [cls, K] of Object.entries(KITS)) {
+    if (!ok('classes', cls)) continue;
+    for (const [outfit, wgt] of K.outfits) {
+      if (!wgt || !ok('outfits', outfit)) continue;
+      const hats = n('hats', K.hats(true, outfit).filter(x => x[1] > 0).map(x => x[0]));
+      const props = n('props', K.props(outfit).filter(x => x[1] > 0).map(x => x[0]));
+      const extra = outfit === 4 ? n('patterns', range(4)) : outfit === 3 ? bin('fur') : 1;
+      kits += hats * props * extra;
+    }
+  }
+  let hair = 0;
+  HAIR_STYLES.forEach((s, i) => { if (ok('hairStyles', i)) hair += i === 0 ? 1 : n('ornaments', range(5)) * bin('ahoge'); });
+  const eyes = n('eyeShapes', range(5)) * n('pupils', range(3)) * bin('hetero') * bin('glowEyes');
+  const eyewear = (on('glasses') ? n('glasses', range(3)) : 1) + (on('eyepatch') ? 1 : 0);
+  const face = eyewear * bin('mask') * n('marks', range(6)) * bin('scar') * bin('freckles') * bin('mole') * bin('fang');
+  const body = bin('amulet') * bin('earrings') * bin('scarf');
+  return { total: races * sexes * 3 * Math.max(kits, 1) * Math.max(hair, 1) * eyes * face * body * 3, races, kits, hair, eyes, face, body };
 }
 
 // The first pink-mage variant, frozen so later generator changes keep it identical.
@@ -1870,8 +1940,15 @@ const randomSeed = () => Math.random().toString(36).slice(2, 8);
 const SELECTS = { race: 'selRace', sex: 'selSex', age: 'selAge', cls: 'selCls', hair: 'selHair', hat: 'selHat' };
 let activePreset = null;
 
-HAIR_STYLES.forEach((s, i) => $('selHair').add(new Option(s.name, i)));
-HATS.forEach((s, i) => $('selHat').add(new Option(s || 'Sin sombrero', i)));
+HAIR_STYLES.forEach((s, i) => { if (!DISABLED.hairStyles.includes(i)) $('selHair').add(new Option(s.name, i)); });
+HATS.forEach((s, i) => { if (!DISABLED.hats.includes(i)) $('selHat').add(new Option(s || 'Sin sombrero', i)); });
+for (const opt of [...$('selRace').options]) if (DISABLED.races.includes(opt.value)) opt.remove();
+for (const opt of [...$('selCls').options]) if (DISABLED.classes.includes(opt.value)) opt.remove();
+{
+  const c = countCombinations().total;
+  const [m, e] = c.toExponential(1).split('e+');
+  $('combos').textContent = `≈ ${m.replace('.', ',')} × 10^${e} combinaciones de rasgos · ${(2 ** 32).toLocaleString('es-ES')} semillas distintas por configuración`;
+}
 
 function selectOverrides() {
   const o = {}, set = {};
@@ -1911,12 +1988,15 @@ function show(seed) {
   const hp = new URLSearchParams({ seed });
   for (const [k, id] of Object.entries(SELECTS)) if ($(id).value !== '') hp.set(k, $(id).value);
   if (activePreset) { hp.set('preset', activePreset.name); hp.set('variant', activePreset.variant.seed); }
-  history.replaceState(null, '', '#' + hp.toString());
+  try { history.replaceState(null, '', '#' + hp.toString()); } catch (e) { /* sandboxed frame */ }
 }
 
 function thumb(container, seed, overrides, onClick) {
   const div = document.createElement('div');
   div.className = 'frame thumb';
+  div.tabIndex = 0;
+  div.setAttribute('role', 'button');
+  div.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); div.click(); } };
   const c = document.createElement('canvas');
   c.width = 256; c.height = 320;
   div.appendChild(c);
@@ -1963,7 +2043,8 @@ function fillGallery() {
 
 try {
   initGL();
-  const hp = new URLSearchParams(location.hash.slice(1));
+  const rawHash = decodeURIComponent(location.hash.slice(1));
+  const hp = new URLSearchParams(rawHash.includes('=') ? rawHash : (rawHash ? 'seed=' + rawHash : ''));
   for (const [k, id] of Object.entries(SELECTS)) if (hp.get(k) !== null) $(id).value = hp.get(k);
   const pr = PRESETS[hp.get('preset')];
   if (hp.get('seed')) {
@@ -1988,9 +2069,20 @@ $('rand').onclick = () => { activePreset = null; show(randomSeed()); };
 $('more').onclick = fillGallery;
 $('clearPreset').onclick = () => { activePreset = null; show($('seed').value); };
 for (const id of Object.values(SELECTS)) $(id).onchange = () => { show($('seed').value); fillGallery(); };
-$('dl').onclick = () => {
+let downloads = null;
+if (window.claude && window.claude.use) {
+  $('dl').hidden = true;
+  window.claude.use('downloads').then(d => { downloads = d; $('dl').hidden = !d; }).catch(() => {});
+}
+$('dl').onclick = async () => {
+  const filename = 'retrato-' + ($('seed').value || 'personaje') + '.png';
+  if (downloads) {
+    const blob = await new Promise(res => $('big').toBlob(res, 'image/png'));
+    try { await downloads.save({ filename, data: blob }); } catch (e) { if (e && e.code === 'unavailable') $('dl').hidden = true; }
+    return;
+  }
   const a = document.createElement('a');
-  a.download = 'retrato-' + $('seed').value + '.png';
+  a.download = filename;
   a.href = $('big').toDataURL('image/png');
   a.click();
 };
