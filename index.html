@@ -90,13 +90,18 @@
           <select id="selAge"><option value="">Aleatoria</option><option value="young">Joven</option><option value="adult">Adulto</option><option value="old">Anciano</option></select></div>
         <div><label for="selCls">Clase</label>
           <select id="selCls"><option value="">Aleatoria</option><option value="mage">Mago</option><option value="warrior">Guerrero</option><option value="ranger">Explorador</option><option value="survivor">Superviviente</option></select></div>
+        <div><label for="selHair">Peinado</label><select id="selHair"><option value="">Aleatorio</option></select></div>
+        <div><label for="selHat">Sombrero</label><select id="selHat"><option value="">Aleatorio</option></select></div>
       </div>
       <ul class="traits" id="traits"></ul>
     </div>
   </div>
 
-  <h2>Prueba: maga de pelo rosa, corte hime, túnica azul y boina morada</h2>
+  <h2>Maga de pelo rosa: corte hime, túnica azul y boina morada</h2>
   <div class="gallery" id="presetGallery"></div>
+
+  <h2>Dragonoides</h2>
+  <div class="gallery" id="dragonGallery"></div>
 
   <h2>Otras semillas <button id="more" style="margin-left:8px;font-size:0.8rem;padding:4px 10px">Más</button></h2>
   <div class="gallery" id="gallery"></div>
@@ -106,19 +111,19 @@
 precision highp float;
 uniform vec2 uRes;
 uniform float uSeed;
-uniform vec3 uSkin, uSkin2, uHair, uCloth, uTrim, uHat, uBg, uEye, uLight, uPaint, uMetal, uLeather, uMagic, uLip, uHorn, uFur;
-uniform vec4 uQ[9];
+uniform vec3 uSkin, uHair, uCloth, uTrim, uHat, uBg, uEye, uEye2, uLight, uPaint, uMetal, uLeather, uMagic, uLip, uHorn, uFur, uScale, uAcc, uLacq;
+uniform vec4 uQ[13];
 
 #define HEAD_W uQ[0].x
 #define HEAD_H uQ[0].y
 #define JAW uQ[0].z
 #define EYE_SEP uQ[0].w
 #define EYE_SIZE uQ[1].x
-#define HAIR_STYLE uQ[1].y
+#define FRINGE uQ[1].y
 #define HAIR_LEN uQ[1].z
 #define BEARD uQ[1].w
 #define SCAR uQ[2].x
-#define PAINT uQ[2].y
+#define MARK uQ[2].y
 #define LIGHT_ANG uQ[2].z
 #define BROW_TILT uQ[2].w
 #define MOUTH_W uQ[3].x
@@ -142,6 +147,22 @@ uniform vec4 uQ[9];
 #define HAT_TILT uQ[7].z
 #define PROP_SIDE uQ[7].w
 #define FUR uQ[8].x
+#define SIDE_LEN uQ[8].y
+#define SIDE_IN uQ[8].z
+#define BACK uQ[8].w
+#define EXTRA uQ[9].x
+#define AHOGE uQ[9].y
+#define ORNAMENT uQ[9].z
+#define EYE_SHAPE uQ[9].w
+#define PUPIL uQ[10].x
+#define EYEPATCH uQ[10].y
+#define GLASSES uQ[10].z
+#define MASK uQ[10].w
+#define SCARF uQ[11].x
+#define SCALES uQ[11].y
+#define FANG uQ[11].z
+#define MOLE uQ[11].w
+#define PATTERN uQ[12].x
 
 bool eq(float v, float k) { return abs(v - k) < 0.5; }
 mat2 rot(float a) { float c = cos(a), s = sin(a); return mat2(c, -s, s, c); }
@@ -162,6 +183,7 @@ float fbm(vec2 p) {
   for (int i = 0; i < 5; i++) { v += a * noise(p); p = m * p; a *= 0.5; }
   return v;
 }
+float tri(float x) { return abs(fract(x) - 0.5) * 2.0; }
 // x: distance to the nearest cell edge, y: random id of the cell
 vec2 voro(vec2 p) {
   vec2 n = floor(p), f = fract(p);
@@ -175,6 +197,18 @@ vec2 voro(vec2 p) {
   }
   return vec2(sqrt(m2) - sqrt(m1), id);
 }
+// Seigaiha wave pattern: returns ring-line intensity.
+float seig(vec2 p) {
+  float jb = floor(p.y / 0.25);
+  for (int k = 0; k < 3; k++) {
+    float j = jb - 2.0 + float(k);
+    float off = 0.5 * mod(j, 2.0);
+    float cx = floor(p.x - off + 0.5) + off;
+    float r = length(p - vec2(cx, j * 0.25));
+    if (r < 0.5) return smoothstep(0.6, 0.85, tri(r * 8.0));
+  }
+  return 0.0;
+}
 float sdE(vec2 p, vec2 r) {
   float k0 = length(p / r);
   float k1 = length(p / (r * r));
@@ -186,7 +220,11 @@ float sdTaper(vec2 p, vec2 a, vec2 b, float ra, float rb) {
   return length(pa - ba * h) - mix(ra, rb, h);
 }
 float sdRhomb(vec2 p, vec2 r) { return (abs(p.x) / r.x + abs(p.y) / r.y - 1.0) * min(r.x, r.y) * 0.7; }
+float sdBox(vec2 p, vec2 b) { vec2 d = abs(p) - b; return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0); }
+float sdFlower(vec2 p, float r, float k) { float a = atan(p.y, p.x); return length(p) - r * (0.6 + 0.4 * cos(a * k)); }
+float sdStar5(vec2 p, float r) { float a = atan(p.x, p.y); float k = 0.5 + 0.5 * cos(a * 5.0); return length(p) - r * mix(0.42, 1.0, k * k * k); }
 float fill(float d, float s) { return smoothstep(s, -s, d); }
+float band(float v, float a, float b) { return smoothstep(a - 0.0015, a + 0.0015, v) * smoothstep(b + 0.0015, b - 0.0015, v); }
 vec3 ellN(vec2 q, vec2 r) {
   vec2 k = q / r;
   float z = sqrt(max(0.0, 1.0 - dot(k, k)));
@@ -212,6 +250,39 @@ vec3 metal(vec3 base, vec3 n, vec3 L, float jit) {
 vec3 gem(vec2 gq, vec3 L) {
   vec3 n = normalize(vec3(sign(gq.x) * 0.6, sign(gq.y) * 0.4, 1.0));
   return uMagic * (0.5 + 0.7 * max(dot(n, L), 0.0)) + 0.35 * exp(-length(gq) / 0.006);
+}
+// Lacquered lamellar plates laced with coloured cords (samurai armour).
+vec3 lamellar(vec2 uv, vec3 n, vec3 L, float jit) {
+  float row = fract(uv.y * 26.0);
+  vec3 c = metal(uLacq, n, L, jit) * (0.8 + 0.3 * row);
+  float cord = step(abs(fract(uv.x * 40.0) - 0.5), 0.13) * step(0.25, row) * step(row, 0.75);
+  c = mix(c, shade(uAcc, n, L, jit), cord * 0.85);
+  return c * (1.0 - 0.5 * smoothstep(0.85, 1.0, row));
+}
+vec3 scaleSkin(vec3 c, vec2 uv, float m, vec3 n, vec3 L, float jit) {
+  if (m <= 0.001) return c;
+  vec2 v = voro(uv);
+  vec3 base = mix(c, uScale, 0.75);
+  vec3 sc = base * (0.62 + 0.5 * smoothstep(0.0, 0.4, v.x)) * (0.9 + 0.2 * v.y);
+  sc += uLight * 0.1 * smoothstep(0.25, 0.5, v.x) * max(dot(n, L), 0.0);
+  return mix(c, sc, m);
+}
+float hornD(vec2 q, vec2 h0, vec2 h1, vec2 h2, vec3 r, float sx, bool antler) {
+  float d = min(sdTaper(q, h0, h1, r.x, r.y), sdTaper(q, h1, h2, r.y, r.z));
+  if (antler) {
+    d = min(d, sdTaper(q, h1, h1 + vec2(sx * 0.06, 0.045), 0.006, 0.0015));
+    vec2 hm = mix(h1, h2, 0.55);
+    d = min(d, sdTaper(q, hm, hm + vec2(-sx * 0.03, 0.05), 0.005, 0.0012));
+    d = min(d, sdTaper(q, hm, hm + vec2(sx * 0.05, 0.03), 0.005, 0.0012));
+  }
+  return d;
+}
+float sdBow(vec2 p, float s) {
+  vec2 a = vec2(abs(p.x), p.y);
+  float loop = sdE(rot(-0.35) * (a - vec2(0.022, 0.004) * s), vec2(0.022, 0.013) * s);
+  float knot = length(p) - 0.007 * s;
+  float tail = sdTaper(a, vec2(0.004, -0.004) * s, vec2(0.016, -0.03) * s, 0.005 * s, 0.003 * s);
+  return min(min(loop, knot), tail);
 }
 
 void main() {
@@ -243,19 +314,21 @@ void main() {
   float dHead = sdE(hq, hr);
   bool hood = eq(HAT, 3.0);
   bool helmet = eq(HAT, 5.0);
-  bool dragon = eq(RACE, 2.0);
-  float HS = HAIR_STYLE;
+  bool topCovered = hood || helmet || eq(HAT, 8.0) || eq(HAT, 10.0);
+  bool hasHair = FRINGE > -0.5;
   float PS = PROP_SIDE;
   float BW = BODY_W;
   float es = EYE_SEP, esz = EYE_SIZE;
+  float pside = PART > 0.0 ? 1.0 : -1.0;
 
   vec2 hoodR = hr * vec2(1.6, 1.33);
   float dHoodOuter = min(sdE(fq - vec2(0.0, 0.015), hoodR),
                          sdE(fq - vec2(0.0, -0.12), vec2(hr.x * 1.75, 0.2)));
   dHoodOuter += 0.006 * fbm(q * 12.0 + so);
 
-  // ---- props behind the body: sword hilt / quiver
+  // ---- props behind the body
   if (eq(PROP, 2.0)) {
+    // sword hilt over the shoulder
     vec2 a = vec2(PS * 0.2, -0.24), b = vec2(PS * 0.27, -0.07);
     vec2 dir = normalize(b - a), perp = vec2(-dir.y, dir.x);
     float t = dot(q - a, dir);
@@ -267,6 +340,19 @@ void main() {
               fill(sdTaper(q, a - perp * 0.055, a + perp * 0.055, 0.009, 0.009), soft));
     vec2 pc = b + dir * 0.012;
     col = mix(col, metal(uMetal, normalize(vec3((q - pc) / 0.017, 0.6)), L, jit), fill(length(q - pc) - 0.017, soft));
+  }
+  if (eq(PROP, 4.0)) {
+    // katana: diamond-wrapped tsuka, oval tsuba, metal kashira
+    vec2 a = vec2(PS * 0.19, -0.23), b = vec2(PS * 0.29, -0.02);
+    vec2 dir = normalize(b - a), perp = vec2(-dir.y, dir.x);
+    float t = dot(q - a, dir), s = dot(q - a, perp);
+    float dia = min(abs(fract((t + s) * 70.0) - 0.5), abs(fract((t - s) * 70.0) - 0.5));
+    vec3 tc = mix(uAcc * 0.55, vec3(0.88, 0.85, 0.78), smoothstep(0.28, 0.36, dia));
+    tc = shade(tc, normalize(vec3(perp * s / 0.0095 * 0.8, 0.6)), L, jit);
+    col = mix(col, tc, fill(sdTaper(q, a, b, 0.0095, 0.009), soft));
+    col = mix(col, metal(uMetal, normalize(vec3(perp * s / 0.01, 0.7)), L, jit), fill(sdTaper(q, b - dir * 0.004, b + dir * 0.01, 0.0105, 0.009), soft));
+    vec2 tq = vec2(s, t);
+    col = mix(col, metal(uMetal * 0.8, normalize(vec3(perp * tq.x / 0.032, 0.8)), L, jit), fill(sdE(tq, vec2(0.032, 0.006)), soft));
   }
   if (eq(PROP, 3.0)) {
     vec2 a = vec2(PS * 0.16, -0.36), b = vec2(PS * 0.3, -0.06);
@@ -286,30 +372,90 @@ void main() {
     qc = mix(qc, metal(uMetal, qn, L, jit), step(abs(t - 0.95), 0.03));
     col = mix(col, qc, fill(sdTaper(q, a, b, 0.036, 0.04), soft));
   }
+  if (eq(PROP, 5.0)) {
+    // longbow across the back
+    vec2 bq = q - vec2(PS * 0.1, -0.02);
+    vec2 rr = vec2(0.15, 0.33);
+    float d = abs(sdE(bq, rr)) - 0.0085 * (1.0 - 0.55 * abs(bq.y) / rr.y);
+    d = max(max(d, -PS * bq.x), abs(bq.y) - 0.315);
+    float ds = max(abs(bq.x - PS * 0.045) - 0.0012, abs(bq.y) - 0.315);
+    col = mix(col, vec3(0.8, 0.77, 0.7) * 0.7, fill(ds, 0.0008));
+    vec3 wc = uLeather * 1.3 * (0.85 + 0.25 * noise(q * vec2(30.0, 300.0)));
+    col = mix(col, shade(wc, normalize(vec3(PS * 0.5, 0.2, 0.8)), L, jit), fill(d, soft));
+  }
+  if (eq(PROP, 6.0)) {
+    // round shield slung on the back
+    vec2 sq = q - vec2(PS * 0.2, -0.17);
+    float d = length(sq) - 0.2;
+    vec3 wood = uLeather * 1.2 * (0.8 + 0.3 * step(0.5, fract(sq.x * 22.0))) * (0.9 + 0.2 * noise(vec2(sq.x * 40.0, sq.y * 300.0)));
+    vec3 face = mix(wood, uCloth * 1.1, step(0.0, sq.x * sq.y) * 0.85);
+    vec3 sn = normalize(vec3(sq / 0.2 * 0.5, 1.0));
+    vec3 c = shade(face, sn, L, jit);
+    c = mix(c, metal(uMetal, sn, L, jit), fill(abs(d + 0.01) - 0.01, 0.0015));
+    float ra = atan(sq.y, sq.x);
+    float rv = length(vec2((fract(ra * 1.9099) - 0.5) * 0.105, length(sq) - 0.19)) - 0.005;
+    c = mix(c, metal(uMetal * 1.2, sn, L, jit) + 0.1, fill(rv, 0.001));
+    col = mix(col, c * 0.85, fill(d, soft));
+  }
+  if (eq(PROP, 9.0)) {
+    // bearded axe over the shoulder
+    vec2 a = vec2(PS * 0.2, -0.3), b = vec2(PS * 0.25, 0.03);
+    vec3 hc9 = shade(uLeather * 1.2, vec3(PS * 0.4, 0.0, 0.9), L, jit) * (0.85 + 0.25 * noise(q * vec2(300.0, 20.0)));
+    col = mix(col, hc9, fill(sdTaper(q, a, b + vec2(0.0, 0.02), 0.009, 0.008), soft));
+    vec2 aq = q - (b + vec2(PS * 0.004, -0.01));
+    float dE9 = sdE(aq, vec2(0.055, 0.058));
+    float dBlade = max(dE9, -PS * aq.x);
+    dBlade = max(dBlade, -sdE(aq - vec2(PS * 0.004, -0.07), vec2(0.04, 0.045)));
+    vec3 bc9 = metal(uMetal, normalize(vec3(PS * 0.3, 0.3, 0.9)), L, jit);
+    bc9 += 0.25 * fill(abs(dE9) - 0.005, 0.002);
+    col = mix(col, bc9, fill(dBlade, soft));
+  }
 
-  // ---- hood back / long hair back
+  // ---- hood back / hair behind the head
   if (hood) {
     vec3 c = shade(uCloth * 0.8, ellN(fq - vec2(0.0, 0.015), hoodR), L, jit);
     col = mix(col, c * 0.7, fill(dHoodOuter, soft));
-  } else if (eq(HS, 4.0)) {
-    // hime: straight curtain with a blunt cut
-    float wdt = hr.x * 1.32 * HAIR_VOL;
-    float bottom = hc.y - 0.22 - 0.16 * HAIR_LEN + 0.004 * noise(vec2(q.x * 50.0, 0.0) + so);
-    float d = min(sdE(fq - vec2(0.0, 0.02), vec2(wdt, hr.y * 1.08)),
-                  max(abs(q.x) - wdt, max(q.y - hc.y - 0.02, bottom - q.y)));
-    vec2 fl = vec2(q.x * 70.0 + fbm(q * 6.0 + so) * 2.0, q.y * 3.0);
-    float strand = 0.6 * noise(fl + so) + 0.4 * noise(fl * vec2(3.0, 2.0) + so);
-    vec3 n = normalize(vec3(q.x / wdt * 0.8, 0.0, 1.0));
-    vec3 c = shade(uHair * (0.75 + 0.5 * strand), n, L, jit) * 0.62;
-    col = mix(col, c, fill(d, soft));
-  } else if (eq(HS, 2.0)) {
-    vec2 c0 = hc + vec2(0.0, -0.07 * HAIR_LEN);
-    vec2 rr = vec2(hr.x * 1.3 * HAIR_VOL, hr.y * 1.08 + 0.14 * HAIR_LEN);
-    float d = sdE(q - c0, rr) + 0.012 * fbm(q * vec2(40.0, 5.0) + so);
-    vec2 fl = vec2(q.x * 50.0 + fbm(q * 5.0 + so) * 4.0, q.y * 4.0);
-    float strand = 0.6 * noise(fl + so) + 0.4 * noise(fl * vec2(3.0, 2.0) + so);
-    vec3 c = shade(uHair * (0.75 + 0.5 * strand), ellN(q - c0, rr), L, jit) * 0.7;
-    col = mix(col, c, fill(d, soft));
+  } else if (hasHair) {
+    if (eq(BACK, 2.0)) {
+      // straight curtain with a blunt cut
+      float wdt = hr.x * 1.32 * HAIR_VOL;
+      float bottom = hc.y - 0.22 - 0.16 * HAIR_LEN + 0.004 * noise(vec2(q.x * 50.0, 0.0) + so);
+      float d = min(sdE(fq - vec2(0.0, 0.02), vec2(wdt, hr.y * 1.08)),
+                    max(abs(q.x) - wdt, max(q.y - hc.y - 0.02, bottom - q.y)));
+      vec2 fl = vec2(q.x * 70.0 + fbm(q * 6.0 + so) * 2.0, q.y * 3.0);
+      float strand = 0.6 * noise(fl + so) + 0.4 * noise(fl * vec2(3.0, 2.0) + so);
+      vec3 n = normalize(vec3(q.x / wdt * 0.8, 0.0, 1.0));
+      vec3 c = shade(uHair * (0.75 + 0.5 * strand), n, L, jit) * 0.62;
+      col = mix(col, c, fill(d, soft));
+    } else if (eq(BACK, 1.0)) {
+      vec2 c0 = hc + vec2(0.0, -0.07 * HAIR_LEN);
+      vec2 rr = vec2(hr.x * 1.3 * HAIR_VOL, hr.y * 1.08 + 0.14 * HAIR_LEN);
+      float d = sdE(q - c0, rr) + 0.012 * fbm(q * vec2(40.0, 5.0) + so);
+      vec2 fl = vec2(q.x * 50.0 + fbm(q * 5.0 + so) * 4.0, q.y * 4.0);
+      float strand = 0.6 * noise(fl + so) + 0.4 * noise(fl * vec2(3.0, 2.0) + so);
+      vec3 c = shade(uHair * (0.75 + 0.5 * strand), ellN(q - c0, rr), L, jit) * 0.7;
+      col = mix(col, c, fill(d, soft));
+    } else if (eq(BACK, 3.0)) {
+      // bob: rounded, curling under at the chin
+      float wdt = hr.x * 1.3 * HAIR_VOL;
+      float d = max(sdE(fq - vec2(0.0, -0.005), vec2(wdt, hr.y * 1.12)), -0.125 - fq.y + 0.003 * noise(vec2(q.x * 60.0, 0.0) + so));
+      vec2 fl = vec2(q.x * 70.0 + fbm(q * 6.0 + so) * 2.0, q.y * 3.0);
+      float strand = 0.6 * noise(fl + so) + 0.4 * noise(fl * vec2(3.0, 2.0) + so);
+      vec3 c = shade(uHair * (0.75 + 0.5 * strand), ellN(fq, vec2(wdt, hr.y * 1.12)), L, jit) * 0.65;
+      col = mix(col, c, fill(d, soft));
+    }
+    if (eq(EXTRA, 4.0)) {
+      // high ponytail falling to one side
+      vec2 t0 = hc + vec2(0.0, hr.y * 0.95);
+      vec2 t1 = t0 + vec2(pside * 0.09, 0.05);
+      vec2 t2 = t0 + vec2(pside * 0.2, -0.2 - 0.12 * HAIR_LEN);
+      float d = min(sdTaper(q, t0, t1, 0.028, 0.042), sdTaper(q, t1, t2, 0.042, 0.008)) + 0.006 * fbm(q * 25.0 + so);
+      vec2 fl = vec2(q.x * 60.0 + fbm(q * 5.0 + so) * 3.0, q.y * 4.0);
+      float strand = 0.6 * noise(fl + so) + 0.4 * noise(fl * vec2(3.0, 2.0) + so);
+      vec3 c = shade(uHair * (0.75 + 0.5 * strand), normalize(vec3(pside * 0.3, 0.3, 0.9)), L, jit) * 0.8;
+      c *= mix(0.7, 1.0, smoothstep(0.0, 0.015, -d));
+      col = mix(col, c, fill(d, soft));
+    }
   }
 
   // ---- neck
@@ -319,9 +465,9 @@ void main() {
     float d = sdE(q - nc, vec2(nw, 0.15));
     vec3 n = normalize(vec3((q.x / nw) * 0.9, -0.2, 0.8));
     vec3 c = shade(uSkin * 0.85, n, L, jit);
-    if (dragon) {
-      vec3 belly = shade(uSkin2 * 0.85, n, L, jit) * (0.82 + 0.18 * step(0.35, fract(q.y * 55.0)));
-      c = mix(c, belly, smoothstep(nw * 0.9, nw * 0.3, abs(q.x)));
+    if (SCALES > 0.0) {
+      float m = smoothstep(0.55, 0.8, abs(q.x) / nw + 0.3 * fbm(q * 20.0 + so)) * SCALES * 0.9;
+      c = scaleSkin(c, q * vec2(55.0, 65.0) + so, m, n, L, jit);
     }
     c *= mix(0.9, 0.35, smoothstep(hc.y - 0.24, hc.y - 0.12, q.y));
     col = mix(col, c, fill(d, soft));
@@ -404,13 +550,61 @@ void main() {
     vc *= 1.0 - 0.35 * smoothstep(-0.02, 0.0, dv);
     c = mix(c, vc, fill(dv, 0.002));
     col = mix(col, c * bodyDark, fill(dBody, soft));
-    strap = eq(PROP, 3.0);
-  } else {
+    strap = eq(PROP, 3.0) || eq(PROP, 5.0);
+  } else if (eq(OUTFIT, 3.0)) {
     // survivor: rough cloth, fur collar or strap
     vec3 c = shade(uCloth, bn, L, jit + 0.2 * folds);
     c *= (0.9 + 0.1 * folds) * (0.92 + 0.16 * fbm(q * 9.0 + so));
     col = mix(col, c * bodyDark, fill(dBody, soft));
     strap = FUR < 0.5;
+  } else if (eq(OUTFIT, 4.0)) {
+    // kimono: crossed collar (left over right) with a white under-collar
+    vec3 c = shade(uCloth, bn, L, jit + 0.2 * folds) * (0.9 + 0.1 * folds);
+    vec2 pq = q + vec2(folds * 0.004, 0.0);
+    float pat = 0.0;
+    if (eq(PATTERN, 1.0)) {
+      pat = seig(pq * 14.0) * 0.55;
+    } else if (eq(PATTERN, 2.0)) {
+      pat = mod(floor(pq.x * 16.0) + floor(pq.y * 16.0), 2.0) * 0.45;
+    } else if (eq(PATTERN, 3.0)) {
+      vec2 cell = floor(pq * 11.0);
+      vec2 fc = fract(pq * 11.0) - 0.5 - hash2(cell) * 0.2;
+      float h = hash1(cell + 3.1);
+      pat = step(0.55, h) * fill(sdFlower(rot(h * 6.28) * fc, 0.28, 5.0), 0.04) * 0.8;
+    }
+    c = mix(c, shade(uAcc, bn, L, jit), pat);
+    float x0 = q.x + 0.015;
+    float lineL = -0.35 - x0 * 1.15;
+    float lineR = -0.35 + x0 * 1.15;
+    float vy = max(lineL, lineR);
+    vec3 collar = shade(uTrim, bn, L, jit) * (0.9 + 0.15 * noise(q * 120.0));
+    c = mix(c, collar, step(x0, 0.0) * band(q.y, lineL - 0.028, lineL) * step(lineR, q.y));
+    c *= 1.0 - 0.3 * band(q.y, lineR - 0.036, lineR - 0.028);
+    c = mix(c, collar, band(q.y, lineR - 0.028, lineR));
+    vec3 skinC = shade(uSkin * 0.8, bn, L, jit) * 0.85;
+    vec3 inner = shade(vec3(0.9, 0.88, 0.84), bn, L, jit);
+    c = mix(c, mix(skinC, inner, step(q.y, vy + 0.012)), smoothstep(vy - 0.0015, vy + 0.0015, q.y));
+    col = mix(col, c * bodyDark, fill(dBody, soft));
+    brooch = false;
+  } else {
+    // samurai: laced lamellar do over a kimono, rectangular sode
+    vec3 c = lamellar(q, bn, L, jit);
+    float vy = -0.33 + abs(q.x) * 1.3;
+    c *= 1.0 - 0.4 * band(q.y, vy - 0.042, vy - 0.032);
+    c = mix(c, shade(uCloth, bn, L, jit), smoothstep(vy - 0.034, vy - 0.03, q.y));
+    c = mix(c, shade(vec3(0.9, 0.88, 0.84), bn, L, jit), band(q.y, vy - 0.007, vy));
+    c = mix(c, shade(uSkin * 0.8, bn, L, jit) * 0.85, smoothstep(vy - 0.0015, vy + 0.0015, q.y));
+    col = mix(col, c * bodyDark, fill(dBody, soft));
+    for (int i = 0; i < 2; i++) {
+      float sx = i == 0 ? -1.0 : 1.0;
+      vec2 sq = rot(sx * 0.3) * (q - vec2(sx * 0.33 * BW, -0.34));
+      float ds = sdBox(sq, vec2(0.095, 0.085)) - 0.008;
+      vec3 sn = normalize(vec3(sx * 0.35, 0.25, 0.9));
+      vec3 sc = lamellar(sq + vec2(0.0, 0.3), sn, L, jit);
+      sc = mix(sc, metal(uMetal * 1.1, sn, L, jit), band(sq.y, 0.072, 0.1));
+      col = mix(col, sc, fill(ds, soft));
+    }
+    brooch = false;
   }
 
   if (FUR > 0.5) {
@@ -450,8 +644,21 @@ void main() {
     addGlow += uMagic * 0.3 * exp(-length(gq) / 0.025);
   }
 
-  // ---- staff
+  // ---- scarf
+  if (SCARF > 0.5) {
+    vec2 sq = q - vec2(0.0, -0.215);
+    vec2 sr = vec2(0.12 * mix(1.0, 0.9, FEMALE), 0.05);
+    float d = sdE(sq, sr) + 0.006 * fbm(q * 20.0 + so);
+    d = min(d, sdTaper(q, vec2(-PS * 0.05, -0.24), vec2(-PS * 0.08, -0.42), 0.03, 0.035));
+    float wr = sin((sq.x * 1.2 + sq.y * 3.0) * 60.0 + fbm(q * 8.0 + so) * 4.0);
+    vec3 sc = shade(uAcc * (0.9 + 0.1 * wr), normalize(vec3(sq / sr * 0.6, 0.8)), L, jit + 0.2 * wr);
+    sc *= 0.9 + 0.1 * step(0.5, fract(q.y * 40.0 - q.x * 10.0));
+    col = mix(col, sc, fill(d, soft));
+  }
+
+  // ---- props in front of the body
   if (eq(PROP, 1.0)) {
+    // staff with a crystal
     float x0 = PS * 0.31;
     vec2 a = vec2(x0, -0.55), b = vec2(x0 - PS * 0.015, 0.23);
     float t = (q.y - a.y) / (b.y - a.y);
@@ -477,9 +684,85 @@ void main() {
       addGlow += uMagic * (exp(-length(dq) / 0.0025) + 0.4 * exp(-abs(dq.x) / 0.0012 - abs(dq.y) / 0.01) + 0.4 * exp(-abs(dq.y) / 0.0012 - abs(dq.x) / 0.01));
     }
   }
+  if (eq(PROP, 10.0)) {
+    // spear with a leaf blade and a tassel
+    float x0 = PS * 0.32;
+    vec2 a = vec2(x0, -0.55), b = vec2(x0 - PS * 0.012, 0.19);
+    float t = (q.y - a.y) / (b.y - a.y);
+    vec3 sn = normalize(vec3((q.x - mix(a.x, b.x, t)) / 0.01, 0.0, 0.8));
+    col = mix(col, shade(uLeather * 1.1 * (0.85 + 0.25 * noise(vec2(q.x * 400.0, q.y * 20.0))), sn, L, jit), fill(sdTaper(q, a, b, 0.0095, 0.0085), soft));
+    vec2 bq = q - (b + vec2(0.0, 0.075));
+    float dBl = sdE(bq, vec2(0.02, 0.07));
+    vec3 bln = normalize(vec3(sign(bq.x) * 0.5, 0.2, 0.85));
+    col = mix(col, metal(uMetal, bln, L, jit) + 0.15 * fill(abs(bq.x) - 0.0015, 0.001), fill(dBl, soft));
+    col = mix(col, metal(uMetal * 0.9, sn, L, jit), fill(sdTaper(q, b - vec2(0.0, 0.012), b + vec2(0.0, 0.012), 0.012, 0.009), soft));
+    vec2 tq = q - b;
+    float dT = sdTaper(q, b - vec2(0.0, 0.012), b + vec2(PS * 0.018, -0.08), 0.01, 0.024) + 0.006 * noise(vec2(tq.x * 300.0, 0.0));
+    vec3 tcol = shade(uAcc * (0.75 + 0.4 * noise(vec2(tq.x * 400.0, tq.y * 20.0))), vec3(PS * 0.3, 0.2, 0.9), L, jit);
+    col = mix(col, tcol, fill(dT, 0.0015));
+  }
+  if (eq(PROP, 7.0)) {
+    // floating grimoire with glowing pages
+    vec2 gc = vec2(PS * 0.265, -0.03 + 0.01 * sin(uSeed));
+    vec2 gq = q - gc;
+    for (int i = 0; i < 2; i++) {
+      float sx = i == 0 ? -1.0 : 1.0;
+      vec2 pq = rot(sx * 0.12) * (gq - vec2(sx * 0.036, 0.0));
+      float dc = sdBox(pq, vec2(0.037, 0.05)) - 0.003;
+      col = mix(col, shade(mix(uCloth, uLeather, 0.5) * 0.8, vec3(sx * 0.3, 0.2, 0.9), L, jit), fill(dc, soft));
+      float dpg = sdBox(pq - vec2(sx * -0.002, 0.004), vec2(0.031, 0.043));
+      vec3 page = mix(vec3(0.92, 0.87, 0.75), uMagic, 0.2) * (0.9 + 0.1 * noise(pq * 200.0));
+      page *= mix(0.8, 1.05, smoothstep(0.03, -0.02, sx * pq.x));
+      float ln = step(abs(fract(pq.y * 90.0) - 0.5), 0.14) * step(abs(pq.x), 0.023) * step(abs(pq.y), 0.036);
+      page = mix(page, uMagic * 0.6, ln * 0.7);
+      col = mix(col, page, fill(dpg, 0.0012));
+    }
+    addGlow += uMagic * 0.3 * exp(-length(gq) / 0.05);
+    for (int i = 0; i < 5; i++) {
+      float fi = float(i);
+      float h = hash1(vec2(fi, uSeed + 2.0));
+      vec2 gp = gc + vec2((h - 0.5) * 0.09, 0.06 + fract(h * 7.3) * 0.1);
+      float dr = abs(length(q - gp) - 0.006) - 0.0012;
+      addGlow += uMagic * 0.9 * fill(dr, 0.0012);
+      addGlow += uMagic * 0.12 * exp(-length(q - gp) / 0.01);
+    }
+  }
+  if (eq(PROP, 8.0)) {
+    // arcane orb with an orbiting ring
+    vec2 oq = q - vec2(PS * 0.26, 0.02);
+    float r0 = 0.042;
+    vec2 rq = rot(0.4 * PS) * oq;
+    float dr = abs(sdE(rq, vec2(0.075, 0.018))) - 0.002;
+    col = mix(col, uMagic * 1.1, fill(dr, 0.001) * step(0.0, rq.y));
+    float z = sqrt(max(0.0, 1.0 - dot(oq, oq) / (r0 * r0)));
+    vec3 on = normalize(vec3(oq / r0, z));
+    float sw = fbm(oq * 40.0 + vec2(uSeed * 3.0, 0.0) + fbm(oq * 20.0 + so) * 2.0);
+    vec3 oc = uMagic * (0.35 + 0.9 * smoothstep(-0.2, 0.5, sw)) * (0.6 + 0.4 * on.z);
+    oc += pow(max(dot(reflect(-L, on), vec3(0.0, 0.0, 1.0)), 0.0), 30.0) * 0.8;
+    oc += uMagic * 0.4 * pow(1.0 - on.z, 3.0);
+    col = mix(col, oc, fill(length(oq) - r0, 0.0015));
+    col = mix(col, uMagic * 1.3, fill(dr, 0.001) * step(rq.y, 0.0));
+    addGlow += uMagic * (0.45 * exp(-length(oq) / 0.05) + 0.15 * exp(-length(oq) / 0.12));
+  }
+
+  // ---- twin tails
+  if (hasHair && !hood && eq(EXTRA, 3.0)) {
+    for (int i = 0; i < 2; i++) {
+      float sx = i == 0 ? -1.0 : 1.0;
+      vec2 t0 = hc + vec2(sx * hr.x * 0.92, hr.y * 0.55);
+      vec2 t1 = t0 + vec2(sx * 0.085, -0.12);
+      vec2 t2 = t0 + vec2(sx * 0.07, -0.34 - 0.14 * HAIR_LEN);
+      float d = min(sdTaper(q, t0, t1, 0.03, 0.058), sdTaper(q, t1, t2, 0.058, 0.01)) + 0.008 * fbm(q * vec2(25.0, 8.0) + so);
+      vec2 fl = vec2(q.x * 55.0 + fbm(q * 5.0 + so) * 4.0, q.y * 4.0);
+      float strand = 0.6 * noise(fl + so) + 0.4 * noise(fl * vec2(3.0, 2.0) + so);
+      vec3 c = shade(uHair * (0.72 + 0.5 * strand), normalize(vec3(sx * 0.35, 0.15, 0.9)), L, jit) * 0.92;
+      c *= mix(0.65, 1.0, smoothstep(0.0, 0.02, -d));
+      col = mix(col, c, fill(d, soft));
+    }
+  }
 
   // ---- ears
-  if (!hood && !helmet) {
+  if (!topCovered) {
     for (int i = 0; i < 2; i++) {
       float sx = i == 0 ? -1.0 : 1.0;
       vec2 ep = hc + vec2(sx * hr.x * 0.93, 0.0);
@@ -498,8 +781,7 @@ void main() {
         di = 1.0;
         for (int k = 0; k < 3; k++) {
           float fk = float(k);
-          float sp = sdTaper(q, ep + vec2(0.0, 0.025 - fk * 0.025), ep + vec2(sx * (0.1 - fk * 0.018), 0.07 - fk * 0.045), 0.006, 0.001);
-          di = min(di, sp);
+          di = min(di, sdTaper(q, ep + vec2(0.0, 0.025 - fk * 0.025), ep + vec2(sx * (0.1 - fk * 0.018), 0.07 - fk * 0.045), 0.006, 0.001));
         }
         d = min(d, di);
       } else {
@@ -508,7 +790,8 @@ void main() {
       }
       vec3 c = shade(uSkin, normalize(vec3(sx * 0.6, 0.2, 0.8)), L, jit);
       if (eq(EAR, 3.0)) {
-        c = mix(c * 0.7, shade(uSkin2, normalize(vec3(sx * 0.5, 0.5, 0.7)), L, jit), fill(di, 0.002));
+        c = mix(shade(uScale * 0.75, normalize(vec3(sx * 0.6, 0.2, 0.8)), L, jit),
+                shade(uScale * 1.1, normalize(vec3(sx * 0.5, 0.5, 0.7)), L, jit), fill(di, 0.002));
       } else {
         c = mix(c, c * vec3(0.6, 0.45, 0.45), fill(di, 0.004) * 0.7);
       }
@@ -525,13 +808,11 @@ void main() {
   {
     vec3 n = ellN(hq, hr);
     float nsz = NOSE;
-    if (!dragon) {
-      float noseMask = exp(-pow(fq.x / (0.017 * nsz), 2.0)) * smoothstep(0.03, -0.01, fq.y) * smoothstep(-0.085, -0.05, fq.y);
-      n = normalize(n + vec3(fq.x / (0.017 * nsz), 0.0, 0.0) * noseMask * 0.7);
-      vec2 tp = fq - vec2(0.0, -0.058);
-      float tr = 0.012 * nsz;
-      n = normalize(n + vec3(tp / tr, 0.0) * exp(-dot(tp, tp) / (tr * tr)) * 0.35);
-    }
+    float noseMask = exp(-pow(fq.x / (0.017 * nsz), 2.0)) * smoothstep(0.03, -0.01, fq.y) * smoothstep(-0.085, -0.05, fq.y);
+    n = normalize(n + vec3(fq.x / (0.017 * nsz), 0.0, 0.0) * noseMask * 0.7);
+    vec2 tp = fq - vec2(0.0, -0.058);
+    float tr = 0.012 * nsz;
+    n = normalize(n + vec3(tp / tr, 0.0) * exp(-dot(tp, tp) / (tr * tr)) * 0.35);
     float cheek = 0.0;
     for (int i = 0; i < 2; i++) {
       float sx = i == 0 ? -1.0 : 1.0;
@@ -552,14 +833,12 @@ void main() {
       c *= 1.0 - 0.4 * exp(-dot(sdv, sdv) / 0.0011);
     }
 
-    if (dragon) {
-      vec2 v = voro(fq * vec2(62.0, 75.0) + so);
-      float mask = 0.35 + 0.65 * smoothstep(0.03, 0.12, length(fq * vec2(1.0, 0.9) - vec2(0.0, -0.02)));
-      c *= 1.0 + (v.y - 0.5) * 0.2 * mask;
-      c *= 1.0 - 0.4 * smoothstep(0.12, 0.0, v.x) * mask;
-      float jawM = smoothstep(-0.07, -0.13, fq.y) * smoothstep(hr.x * 0.9, hr.x * 0.2, abs(fq.x));
-      vec3 belly = shade(uSkin2, n, L, jit) * (0.85 + 0.15 * step(0.35, fract(fq.y * 60.0)));
-      c = mix(c, belly, jawM * 0.8);
+    // dragon scales on the temples and outer cheekbones
+    if (SCALES > 0.0) {
+      float side = smoothstep(hr.x * 0.62, hr.x * 0.92, abs(fq.x)) * smoothstep(-0.07, -0.02, fq.y) * smoothstep(0.08, 0.03, fq.y);
+      float under = exp(-pow((abs(fq.x) - es - 0.02) / 0.016, 2.0)) * exp(-pow((fq.y + 0.026) / 0.009, 2.0));
+      float m = smoothstep(0.4, 0.7, clamp(side + under * 0.9, 0.0, 1.0) + 0.3 * fbm(fq * 20.0 + so)) * SCALES * 0.9;
+      c = scaleSkin(c, fq * vec2(55.0, 65.0) + so, m, n, L, jit);
     }
 
     if (FRECKLES > 0.5) {
@@ -571,20 +850,35 @@ void main() {
       c = mix(c, c * vec3(0.72, 0.55, 0.45), step(0.8, hash1(cid + so)) * smoothstep(0.35, 0.15, dd) * fm * 0.8);
     }
 
-    // war paint
+    // face marks: war paint, mystic mark, elven tattoo
     float pm = 0.0;
-    if (eq(PAINT, 1.0)) {
+    if (eq(MARK, 1.0)) {
       pm = fill(abs(fq.y - 0.003) - 0.021 + 0.008 * fbm(fq * 50.0 + so), 0.002);
-    } else if (eq(PAINT, 2.0)) {
+    } else if (eq(MARK, 2.0)) {
       for (int i = 0; i < 3; i++) {
         float fi = float(i);
         float d = sdTaper(fq, vec2(0.035 + fi * 0.017, -0.015), vec2(0.06 + fi * 0.017, -0.095), 0.005, 0.0015);
         pm = max(pm, fill(d + 0.002 * noise(fq * 200.0), 0.0015));
       }
-    } else if (eq(PAINT, 3.0)) {
+    } else if (eq(MARK, 3.0)) {
       pm = fill(sdTaper(fq, vec2(-es, 0.075), vec2(-es + 0.01, -0.12), 0.007, 0.004) + 0.004 * fbm(fq * 60.0 + so), 0.0015);
     }
     c = mix(c, uPaint * (0.75 + 0.35 * stroke) * mix(0.6, 1.1, dot(n, L) * 0.5 + 0.5), pm * 0.85);
+    if (eq(MARK, 4.0)) {
+      vec2 mq = fq - vec2(0.0, 0.058);
+      float dm = min(sdRhomb(mq, vec2(0.0065, 0.013)), length(mq + vec2(0.0, 0.02)) - 0.0028);
+      c = mix(c, uMagic * 1.2 + 0.1, fill(dm, 0.001));
+      addGlow += uMagic * 0.2 * exp(-length(mq) / 0.012);
+    } else if (eq(MARK, 5.0)) {
+      for (int i = 0; i < 2; i++) {
+        float sx = i == 0 ? -1.0 : 1.0;
+        float d = sdTaper(fq, vec2(sx * (es + 0.027), -0.004), vec2(sx * (es + 0.038), -0.032), 0.0016, 0.0006);
+        d = min(d, length(fq - vec2(sx * (es + 0.02), -0.03)) - 0.0022);
+        d = min(d, length(fq - vec2(sx * (es + 0.016), -0.042)) - 0.0018);
+        d = min(d, length(fq - vec2(sx * (es + 0.011), -0.052)) - 0.0014);
+        c = mix(c, mix(uMagic, uSkin * 0.3, 0.35), fill(d, 0.0008) * 0.85);
+      }
+    }
 
     // age
     float wr = smoothstep(0.55, 1.0, AGE);
@@ -609,20 +903,13 @@ void main() {
 
     // nose
     vec2 nt = fq - vec2(0.0, -0.062);
-    if (dragon) {
-      for (int i = 0; i < 2; i++) {
-        float sx = i == 0 ? -1.0 : 1.0;
-        c *= 1.0 - 0.6 * fill(sdE(rot(sx * 0.5) * (fq - vec2(sx * 0.012, -0.06)), vec2(0.007, 0.0022)), 0.0012);
-      }
-    } else {
-      c *= 1.0 - 0.35 * fill(sdE(nt - vec2(0.0, -0.013 * nsz), vec2(0.021 * nsz, 0.0055 * nsz)), 0.004);
-      for (int i = 0; i < 2; i++) {
-        float sx = i == 0 ? -1.0 : 1.0;
-        c *= 1.0 - 0.45 * fill(sdE(nt - vec2(sx * 0.0095 * nsz, -0.008 * nsz), vec2(0.0045, 0.0025) * nsz), 0.0015);
-      }
-      vec2 hl = nt - L.xy * 0.006 * nsz;
-      c += uLight * 0.1 * exp(-dot(hl, hl) / (0.00006 * nsz * nsz));
+    c *= 1.0 - 0.35 * fill(sdE(nt - vec2(0.0, -0.013 * nsz), vec2(0.021 * nsz, 0.0055 * nsz)), 0.004);
+    for (int i = 0; i < 2; i++) {
+      float sx = i == 0 ? -1.0 : 1.0;
+      c *= 1.0 - 0.45 * fill(sdE(nt - vec2(sx * 0.0095 * nsz, -0.008 * nsz), vec2(0.0045, 0.0025) * nsz), 0.0015);
     }
+    vec2 hl = nt - L.xy * 0.006 * nsz;
+    c += uLight * 0.1 * exp(-dot(hl, hl) / (0.00006 * nsz * nsz));
 
     // mouth
     float mw = MOUTH_W;
@@ -632,62 +919,101 @@ void main() {
     c = mix(c, uLip * mix(0.8, 1.1, dot(n, L) * 0.5 + 0.5), fill(sdE(m - vec2(0.0, -lipH * 1.2), vec2(mw * 0.75, lipH)), 0.002) * (0.45 + 0.2 * FEMALE));
     c = mix(c, uLip * 0.7, fill(sdE(m - vec2(0.0, 0.004), vec2(mw * 0.8, 0.004 * (1.0 + 0.3 * FEMALE))), 0.002) * (0.35 + 0.2 * FEMALE));
     c = mix(c, uSkin * vec3(0.25, 0.16, 0.16), fill(abs(m.y) - 0.0017, 0.0012) * smoothstep(mw, mw * 0.5, abs(m.x)));
-    if (dragon) {
-      for (int i = 0; i < 2; i++) {
-        float sx = i == 0 ? -1.0 : 1.0;
-        float d = sdTaper(fq, vec2(sx * mw * 0.7, -0.106), vec2(sx * mw * 0.75, -0.118), 0.003, 0.0005);
-        c = mix(c, vec3(0.92, 0.88, 0.78), fill(d, 0.0008));
-      }
+    if (FANG > 0.5) {
+      float fx = -pside * mw * 0.45;
+      vec2 fb = vec2(fx, -0.108 - fx * fx * MOUTH_CURVE);
+      c = mix(c, vec3(0.95, 0.93, 0.88), fill(sdTaper(fq, fb, fb + vec2(0.0015, -0.009), 0.0028, 0.0004), 0.0007));
     }
     vec2 ch = fq - vec2(0.0, -0.14);
     c *= 1.0 - 0.12 * exp(-dot(ch, ch) / 0.0005);
 
     // eyes and brows
+    float eyeTilt = 0.12, eyeW = 0.025, eyeH = 0.0105, irisK = 1.0, lidDrop = 0.0;
+    if (eq(EYE_SHAPE, 1.0)) { eyeTilt = 0.32; eyeH = 0.0092; }
+    else if (eq(EYE_SHAPE, 2.0)) { eyeTilt = -0.18; eyeH = 0.0118; }
+    else if (eq(EYE_SHAPE, 3.0)) { eyeW = 0.027; eyeH = 0.0145; irisK = 1.3; }
+    else if (eq(EYE_SHAPE, 4.0)) { lidDrop = 0.42; }
     for (int i = 0; i < 2; i++) {
       float sx = i == 0 ? -1.0 : 1.0;
+      vec3 eyeCol = i == 0 ? uEye2 : uEye;
       vec2 e = vec2(sx * es, 0.0);
       vec2 d = fq - e;
       vec2 ed = d;
-      ed.y -= sx * ed.x * 0.12;
-      float dEye = sdE(ed, vec2(0.025, 0.0105) * esz);
+      ed.y -= sx * ed.x * eyeTilt;
+      float dEye = sdE(ed, vec2(eyeW, eyeH) * esz);
       vec3 sclera = mix(uSkin * 0.5, vec3(0.86, 0.82, 0.76), 0.7) * 0.85;
-      float ir = 0.0105 * esz * (dragon ? 1.3 : 1.0);
+      float ir = 0.0105 * esz * irisK;
       float di = length(d) - ir;
-      vec3 iris = uEye * (0.45 + 0.9 * smoothstep(ir, 0.0, length(d - vec2(0.0, -0.004))));
+      vec3 iris = eyeCol * (0.45 + 0.9 * smoothstep(ir, 0.0, length(d - vec2(0.0, -0.004 * irisK))));
+      if (irisK > 1.1) iris *= mix(1.0, 0.55, smoothstep(-ir * 0.2, ir, d.y));
       iris *= mix(0.45, 1.0, smoothstep(0.0, -0.003, di));
       vec3 ec = mix(sclera, iris, fill(di, 0.001));
-      float pupil = dragon ? sdE(d, vec2(0.0022, 0.0085) * esz) : length(d) - 0.0042 * esz;
-      ec = mix(ec, vec3(0.02), fill(pupil, 0.0008));
+      if (eq(PUPIL, 2.0)) {
+        ec = mix(ec, mix(uMagic, vec3(1.0), 0.5), fill(sdStar5(d, 0.0068 * esz * irisK), 0.0007));
+      } else {
+        float pupil = eq(PUPIL, 1.0) ? sdE(d, vec2(0.0022, 0.0085) * esz * irisK) : length(d) - 0.0042 * esz * irisK;
+        ec = mix(ec, vec3(0.02), fill(pupil, 0.0008));
+      }
       ec *= mix(1.0, 0.5, smoothstep(-0.004, 0.008, ed.y));
-      ec = mix(ec, vec3(1.0), fill(length(d - vec2(-0.004, 0.004)) - 0.0022, 0.0008) * 0.85);
-      c = mix(c, ec, fill(dEye, 0.0015));
-      float lid = fill(abs(dEye) - mix(0.0013, 0.0021, FEMALE), 0.001) * smoothstep(-0.004, 0.0, ed.y);
+      ec = mix(ec, vec3(1.0), fill(length(d - vec2(-0.004, 0.004) * irisK) - 0.0022 * irisK, 0.0008) * 0.85);
+      if (irisK > 1.1) ec = mix(ec, vec3(1.0), fill(length(d - vec2(0.004, -0.005)) - 0.0012, 0.0006) * 0.7);
+      float lidY = eyeH * esz * (1.0 - 2.0 * lidDrop);
+      float open = lidDrop > 0.0 ? smoothstep(lidY + 0.001, lidY - 0.001, ed.y) : 1.0;
+      c = mix(c, ec, fill(dEye, 0.0015) * open);
+      float lid = fill(abs(dEye) - mix(0.0013, 0.0021, FEMALE), 0.001) * smoothstep(-0.004, 0.0, ed.y) * (lidDrop > 0.0 ? step(lidY, ed.y) : 1.0);
       c = mix(c, uSkin * 0.12, lid * 0.9);
-      if (FEMALE > 0.5) {
-        vec2 oc = vec2(sx * (es + 0.023 * esz), 0.003);
+      if (lidDrop > 0.0) c = mix(c, uSkin * 0.12, fill(abs(ed.y - lidY) - 0.0016, 0.0009) * fill(dEye, 0.001) * 0.9);
+      if (FEMALE > 0.5 || irisK > 1.1) {
+        vec2 oc = vec2(sx * (es + 0.023 * esz * eyeW / 0.025), 0.003 + (eyeTilt - 0.12) * 0.008);
         c = mix(c, uSkin * 0.08, fill(sdTaper(fq, oc - vec2(sx * 0.004, 0.0), oc + vec2(sx * 0.009, 0.007), 0.0019, 0.0003), 0.0008));
       }
 
       float tilt = BROW_TILT;
-      if (dragon) {
-        float dB = sdTaper(fq, e + vec2(-sx * 0.022, 0.018 - tilt), e + vec2(sx * 0.035, 0.03), 0.007, 0.004);
-        c *= 1.0 - 0.3 * fill(dB - 0.006, 0.004) * step(fq.y, e.y + 0.022);
-        c = mix(c, shade(uSkin * 1.1, vec3(0.0, 0.7, 0.7), L, jit), fill(dB, 0.002) * 0.7);
-      } else {
-        float th = mix(0.0058, 0.0036, FEMALE);
-        vec2 bIn = e + vec2(-sx * 0.026, 0.021 - tilt);
-        vec2 bMid = e + vec2(sx * 0.004, 0.029 + FEMALE * 0.005 - tilt * 0.3);
-        vec2 bOut = e + vec2(sx * 0.031, 0.024 + tilt * 0.3);
-        float dB = min(sdTaper(fq, bIn, bMid, th, th * 0.85), sdTaper(fq, bMid, bOut, th * 0.85, th * 0.4));
-        dB += 0.002 * noise(fq * 300.0);
-        c = mix(c, uHair * 0.7 * (0.8 + 0.3 * noise(fq * vec2(400.0, 60.0))), fill(dB, 0.0015) * 0.9);
-      }
+      float th = mix(0.0058, 0.0036, FEMALE);
+      vec2 bIn = e + vec2(-sx * 0.026, 0.021 - tilt);
+      vec2 bMid = e + vec2(sx * 0.004, 0.029 + FEMALE * 0.005 - tilt * 0.3);
+      vec2 bOut = e + vec2(sx * 0.031, 0.024 + tilt * 0.3);
+      float dB = min(sdTaper(fq, bIn, bMid, th, th * 0.85), sdTaper(fq, bMid, bOut, th * 0.85, th * 0.4));
+      dB += 0.002 * noise(fq * 300.0);
+      c = mix(c, uHair * 0.7 * (0.8 + 0.3 * noise(fq * vec2(400.0, 60.0))), fill(dB, 0.0015) * 0.9);
     }
+
+    if (MOLE > 0.5) c = mix(c, uSkin * 0.3, fill(length(fq - vec2(pside * (es + 0.014), -0.025)) - 0.0022, 0.0008));
 
     if (SCAR > 0.5) {
       float dS = sdTaper(fq, vec2(-es - 0.02, 0.05), vec2(-es + 0.025, -0.07), 0.0035, 0.0015);
       c *= 1.0 - 0.3 * fill(abs(dS) - 0.001, 0.001);
       c = mix(c, c * vec3(1.25, 0.92, 0.92) + 0.04, fill(dS, 0.0012));
+    }
+
+    if (EYEPATCH > 0.5) {
+      vec2 pq = fq - vec2(pside * es, 0.003);
+      float dst = min(sdTaper(fq, vec2(pside * es, 0.015), vec2(-pside * hr.x * 1.1, 0.11), 0.003, 0.003),
+                      sdTaper(fq, vec2(pside * es, -0.008), vec2(pside * hr.x * 1.1, -0.03), 0.003, 0.003));
+      c = mix(c, vec3(0.05, 0.045, 0.045), fill(max(dst, dHead), 0.001));
+      vec3 pc = shade(vec3(0.1, 0.085, 0.08), normalize(vec3(pq / vec2(0.03, 0.024) * 0.6, 0.8)), L, jit);
+      pc *= 1.0 - 0.3 * fill(abs(sdE(pq, vec2(0.026, 0.02))) - 0.0008, 0.0006);
+      c = mix(c, pc, fill(sdE(pq, vec2(0.03, 0.024)), 0.0012));
+    }
+
+    if (GLASSES > 0.5) {
+      float rg = 0.029 * esz;
+      for (int i = 0; i < 2; i++) {
+        float sx = i == 0 ? -1.0 : 1.0;
+        if (eq(GLASSES, 2.0) && sx < 0.0) continue;
+        vec2 gq = fq - vec2(sx * es, 0.0);
+        float inL = fill(length(gq) - rg, 0.001);
+        c = mix(c, c * 0.9 + uBg * 0.1 + 0.03, inL * 0.5);
+        c += 0.22 * fill(abs(dot(gq, normalize(vec2(1.0, 1.0)))) - 0.003, 0.002) * fill(length(gq) - rg * 0.8, 0.002);
+        float thick = eq(GLASSES, 2.0) ? 0.0024 : 0.0016;
+        c = mix(c, metal(uMetal, normalize(vec3(gq / rg, 0.4)), L, jit) + 0.05, fill(abs(length(gq) - rg) - thick, 0.0008));
+        float dt = max(sdTaper(fq, vec2(sx * (es + rg), 0.004), vec2(sx * hr.x * 1.05, 0.012), 0.0013, 0.0013), dHead);
+        if (eq(GLASSES, 1.0)) c = mix(c, metal(uMetal, vec3(0.0, 0.3, 0.95), L, jit), fill(dt, 0.0008));
+      }
+      if (eq(GLASSES, 1.0)) {
+        float db = sdTaper(fq, vec2(-es + rg, 0.006), vec2(es - rg, 0.006), 0.0014, 0.0014);
+        c = mix(c, metal(uMetal, vec3(0.0, 0.3, 0.95), L, jit), fill(db, 0.0008));
+      }
     }
 
     c += uLight * 0.3 * smoothstep(-0.02, 0.0, dHead) * max(0.0, dot(normalize(hq / hr), L.xy));
@@ -711,56 +1037,54 @@ void main() {
     col = mix(col, c, fill(dBd, 0.003));
   }
 
-  // ---- horns
-  if (HORNS > 0.5) {
-    for (int i = 0; i < 2; i++) {
-      float sx = i == 0 ? -1.0 : 1.0;
-      vec2 h0 = hc + vec2(sx * hr.x * 0.5, hr.y * 0.72);
-      vec2 h1 = h0 + (HORNS < 1.5 ? vec2(sx * 0.07, 0.09) : vec2(sx * 0.035, 0.1));
-      vec2 h2 = h0 + (HORNS < 1.5 ? vec2(sx * 0.19, 0.12) : vec2(sx * 0.09, 0.2));
-      float d = min(sdTaper(q, h0, h1, 0.026, 0.016), sdTaper(q, h1, h2, 0.016, 0.002));
-      vec2 e2 = vec2(0.002, 0.0);
-      vec2 g = vec2(min(sdTaper(q + e2, h0, h1, 0.026, 0.016), sdTaper(q + e2, h1, h2, 0.016, 0.002)) - d,
-                    min(sdTaper(q + e2.yx, h0, h1, 0.026, 0.016), sdTaper(q + e2.yx, h1, h2, 0.016, 0.002)) - d);
-      g = normalize(g + 1e-6);
-      float t = clamp(-d / 0.014, 0.0, 1.0);
-      vec3 hn = normalize(vec3(g * (1.0 - t), t + 0.1));
-      float tt = length(q - h0);
-      vec3 hcol = uHorn * (0.85 + 0.2 * step(0.5, fract(tt * 55.0)));
-      col = mix(col, shade(hcol, hn, L, jit) * mix(0.6, 1.0, smoothstep(0.0, 0.05, tt)), fill(d, soft));
-    }
+  // ---- ninja mask over the lower face
+  if (MASK > 0.5) {
+    float top = -0.032 - 0.6 * fq.x * fq.x;
+    float dm = max(dHead - 0.006, fq.y - top);
+    float nwm = 0.06 * HEAD_W * mix(1.0, 0.82, FEMALE) + 0.006;
+    dm = min(dm, max(sdE(q - vec2(0.0, hc.y - 0.2), vec2(nwm, 0.14)), q.y - (hc.y - 0.1)));
+    float mf = sin(fq.x * 90.0 + fq.y * 30.0 + fbm(q * 6.0 + so) * 3.0);
+    vec3 mn = normalize(ellN(hq, hr) + vec3(0.0, -0.2, 0.0));
+    vec3 mc = shade(mix(uCloth, vec3(0.05), 0.6), mn, L, jit + 0.2 * mf) * (0.9 + 0.1 * mf);
+    mc += uLight * 0.08 * exp(-pow(fq.x / 0.018, 2.0)) * smoothstep(-0.03, -0.06, fq.y) * smoothstep(-0.09, -0.06, fq.y);
+    col = mix(col, mc, fill(dm, 0.002));
   }
 
   // ---- hair on top
-  if (!hood && !helmet && HS > 0.5) {
+  if (hasHair && !topCovered) {
     vec2 cc = hc + vec2(0.0, 0.02);
     vec2 cr = hr * vec2(1.1, 1.04) * HAIR_VOL;
     vec2 hq2 = q - cc;
     float dCap = sdE(hq2, cr);
+    if (eq(FRINGE, 2.0)) {
+      float a2 = atan(fq.x, fq.y - 0.02);
+      dCap -= 0.045 * (1.0 - tri(a2 * 1.9 + PART * 0.3)) * smoothstep(-0.03, 0.06, fq.y);
+    }
     float fringe;
-    float sides;
-    if (eq(HS, 4.0)) {
+    if (eq(FRINGE, 1.0)) {
       fringe = hc.y + 0.036 + 0.25 * fq.x * fq.x + 0.003 * noise(vec2(q.x * 60.0, 0.0) + so);
-      sides = max(abs(fq.x) - hr.x * 1.12, hr.x * 0.7 - abs(fq.x));
-      sides = max(sides, max(-0.12 - fq.y + 0.003 * noise(vec2(q.x * 80.0, 0.0) + so), fq.y - 0.06));
+    } else if (eq(FRINGE, 2.0)) {
+      fringe = hc.y + hr.y * 0.55 - 0.055 * (1.0 - tri(q.x * 16.0 + PART)) + 0.006 * noise(q * 30.0 + so);
+    } else if (eq(FRINGE, 3.0)) {
+      fringe = hc.y + hr.y * 0.8 + 0.015 * fbm(q * vec2(30.0, 4.0) + so);
     } else {
       fringe = hc.y + hr.y * 0.56 + PART * 0.18 * fq.x + 0.03 * fbm(q * vec2(30.0, 4.0) + so) + 0.012 * sin(q.x * 70.0 + uSeed);
-      float sl = (eq(HS, 2.0) ? 0.12 * HAIR_LEN : 0.0);
-      sides = max(max(dCap, hr.x * 0.84 - abs(fq.x)), -0.03 - sl - fq.y);
+    }
+    float sides;
+    if (eq(FRINGE, 1.0)) {
+      sides = max(abs(fq.x) - hr.x * 1.12, hr.x * SIDE_IN - abs(fq.x));
+      sides = max(sides, max(SIDE_LEN - fq.y + 0.003 * noise(vec2(q.x * 80.0, 0.0) + so), fq.y - 0.06));
+    } else {
+      sides = max(max(dCap, hr.x * SIDE_IN - abs(fq.x)), SIDE_LEN - fq.y);
     }
     float dTop = max(dCap, fringe - q.y);
     float dHair = min(dTop, sides) + 0.004 * noise(q * 90.0);
 
-    vec2 bun1 = vec2(0.0, 10.0), bun2 = vec2(0.0, 10.0);
-    float bunR = 0.052 * HAIR_VOL;
-    if (eq(HS, 3.0)) bun1 = hc + vec2(0.0, hr.y * 1.02);
-    if (eq(HS, 5.0)) { bun1 = hc + vec2(-hr.x * 0.8, hr.y * 0.9); bun2 = hc + vec2(hr.x * 0.8, hr.y * 0.9); }
-
     col *= 1.0 - 0.35 * fill(dTop - 0.014, 0.01) * fill(dHead, soft);
 
     float a = atan(fq.x, fq.y - 0.05);
-    vec2 fl = eq(HS, 4.0) ? vec2(q.x * 70.0 + fbm(q * 6.0 + so) * 2.0, q.y * 3.0)
-                          : vec2(a * 12.0 + fbm(q * 6.0 + so) * 2.5, length(fq) * 5.0);
+    vec2 fl = eq(FRINGE, 1.0) ? vec2(q.x * 70.0 + fbm(q * 6.0 + so) * 2.0, q.y * 3.0)
+                              : vec2(a * 12.0 + fbm(q * 6.0 + so) * 2.5, length(fq) * 5.0);
     float strand = 0.55 * noise(fl + so) + 0.3 * noise(fl * vec2(4.0, 2.0) + so) + 0.15 * noise(fl * 9.0);
     vec3 n = ellN(hq2, cr);
     n = normalize(n + vec3(0.35 * strand, 0.2 * strand, 0.0));
@@ -770,28 +1094,119 @@ void main() {
     c += mix(vec3(1.0), uLight, 0.4) * 0.22 * ring * (0.4 + strand) * smoothstep(0.08, 0.1, fq.y);
     col = mix(col, c, fill(dHair, 0.0025));
 
+    // buns (top bun / odango) and samurai topknot
+    vec2 bun1 = vec2(0.0, 10.0), bun2 = vec2(0.0, 10.0);
+    float bunR = 0.052 * HAIR_VOL;
+    if (eq(EXTRA, 1.0)) bun1 = hc + vec2(0.0, hr.y * 1.02);
+    if (eq(EXTRA, 2.0)) { bun1 = hc + vec2(-hr.x * 0.8, hr.y * 0.9); bun2 = hc + vec2(hr.x * 0.8, hr.y * 0.9); }
     for (int i = 0; i < 2; i++) {
       vec2 bp = i == 0 ? bun1 : bun2;
       vec2 bq = q - bp;
       float d = length(bq) - bunR + 0.004 * noise(bq * 120.0);
       float sw = noise(vec2(atan(bq.y, bq.x) * 5.0 + length(bq) * 60.0, 0.0) + so);
-      vec3 bcol = shade(uHair * (0.75 + 0.45 * sw), ellN(bq, vec2(bunR)), L, jit);
-      col = mix(col, bcol, fill(d, soft));
-      if (i == 0 && bp.y < 5.0) {
-        // kanzashi hair pin with a flower
+      col = mix(col, shade(uHair * (0.75 + 0.45 * sw), ellN(bq, vec2(bunR)), L, jit), fill(d, soft));
+      if (i == 0 && bp.y < 5.0 && eq(ORNAMENT, 2.0)) {
         vec2 k0 = bp + vec2(-0.06, 0.035), k1 = bp + vec2(0.055, -0.02);
         col = mix(col, metal(uTrim, vec3(0.0, 0.6, 0.8), L, jit), fill(sdTaper(q, k0, k1, 0.003, 0.0025), 0.001));
         vec2 fq2 = q - k0;
-        float fa = atan(fq2.y, fq2.x);
-        float petal = length(fq2) - 0.014 * (0.6 + 0.4 * cos(fa * 5.0));
-        col = mix(col, shade(uPaint * 1.2 + 0.1, normalize(vec3(fq2 / 0.014, 0.8)), L, jit), fill(petal, 0.001));
+        col = mix(col, shade(uAcc * 1.2 + 0.1, normalize(vec3(fq2 / 0.014, 0.8)), L, jit), fill(sdFlower(fq2, 0.014, 5.0), 0.001));
         col = mix(col, vec3(0.95, 0.8, 0.3), fill(length(fq2) - 0.0035, 0.001));
       }
+    }
+    if (eq(EXTRA, 6.0)) {
+      vec2 k0 = hc + vec2(0.0, hr.y * 0.95), k1 = k0 + vec2(0.0, 0.07);
+      float dk = min(sdTaper(q, k0, k1, 0.021, 0.019), length((q - k1) * vec2(1.0, 1.4)) - 0.024);
+      float ks = noise(vec2(q.x * 150.0, q.y * 10.0) + so);
+      vec3 kc = shade(uHair * (0.75 + 0.45 * ks), normalize(vec3((q.x - k0.x) / 0.019 * 0.8, 0.2, 0.7)), L, jit);
+      kc *= mix(0.65, 1.0, smoothstep(0.0, 0.008, -dk));
+      kc = mix(kc, shade(vec3(0.9, 0.88, 0.84), vec3(0.0, 0.3, 0.95), L, jit), band(q.y, k0.y + 0.022, k0.y + 0.032) * fill(dk, 0.001));
+      col = mix(col, kc, fill(dk, soft));
+    }
+
+    if (AHOGE > 0.5 && (eq(HAT, 0.0) || eq(HAT, 4.0) || eq(HAT, 7.0) || eq(HAT, 11.0))) {
+      vec2 a0 = hc + vec2(0.01, 0.02 + hr.y * 1.0 * HAIR_VOL);
+      vec2 a1 = a0 + vec2(0.035, 0.05), a2 = a0 + vec2(0.005, 0.085);
+      float d = min(sdTaper(q, a0, a1, 0.006, 0.0045), sdTaper(q, a1, a2, 0.0045, 0.0008));
+      col = mix(col, shade(uHair * 1.05, vec3(0.3, 0.4, 0.86), L, jit), fill(d, 0.001));
+    }
+  }
+
+  // ---- side braid over the shoulder
+  if (hasHair && !hood && eq(EXTRA, 5.0)) {
+    float bs = -PS;
+    vec2 b0 = hc + vec2(bs * hr.x * 0.9, -0.03);
+    vec2 b1 = vec2(bs * 0.17, -0.36 - 0.05 * HAIR_LEN);
+    for (int k = 0; k < 14; k++) {
+      float t = (float(k) + 0.5) / 14.0;
+      vec2 cpos = mix(b0, b1, t) + vec2(bs * 0.03 * sin(t * 3.0), 0.0);
+      float alt = mod(float(k), 2.0) * 2.0 - 1.0;
+      float rr = mix(0.03, 0.019, t);
+      vec2 dq = rot(alt * 0.75) * (q - cpos - vec2(alt * rr * 0.3, 0.0));
+      vec2 er = vec2(rr, rr * 0.5);
+      float de = sdE(dq, er);
+      float strand = noise(vec2(dq.x * 220.0, dq.y * 25.0) + so);
+      vec3 bc = shade(uHair * (0.75 + 0.45 * strand), normalize(vec3(dq / er * 0.4, 0.9)), L, jit);
+      bc *= mix(0.6, 1.0, smoothstep(0.0, 0.006, -de));
+      col = mix(col, bc, fill(de, 0.0015));
+    }
+    float dt = sdTaper(q, b1, b1 + vec2(0.0, -0.045), 0.013, 0.004) + 0.003 * noise(vec2(q.x * 300.0, 0.0));
+    col = mix(col, shade(uHair * 0.9, vec3(0.0, 0.2, 0.95), L, jit), fill(dt, 0.0015));
+    col = mix(col, shade(uAcc, vec3(0.0, 0.3, 0.95), L, jit), fill(length((q - b1) * vec2(1.0, 2.2)) - 0.012, 0.001));
+  }
+
+  // ---- hair ornaments
+  if (hasHair && !topCovered && ORNAMENT > 0.5) {
+    vec2 op = hc + vec2(pside * hr.x * 0.72, hr.y * 0.72);
+    if (eq(ORNAMENT, 1.0)) {
+      vec2 p1 = op, p2 = vec2(0.0, 10.0);
+      if (eq(EXTRA, 3.0)) { p1 = hc + vec2(-hr.x * 0.92, hr.y * 0.55); p2 = hc + vec2(hr.x * 0.92, hr.y * 0.55); }
+      if (eq(EXTRA, 4.0)) p1 = hc + vec2(pside * 0.07, hr.y * 0.95 + 0.04);
+      if (eq(EXTRA, 5.0)) p1 = vec2(-PS * 0.17, -0.36 - 0.05 * HAIR_LEN);
+      for (int i = 0; i < 2; i++) {
+        vec2 bp = i == 0 ? p1 : p2;
+        vec2 bq = q - bp;
+        vec3 rc = shade(uAcc, normalize(vec3(bq / 0.03 * 0.5, 0.85)), L, jit);
+        col = mix(col, rc, fill(sdBow(bq, 1.1), 0.0012));
+        col = mix(col, shade(uAcc * 0.8, vec3(0.0, 0.3, 0.95), L, jit), fill(length(bq) - 0.0065, 0.001));
+      }
+    } else if (eq(ORNAMENT, 2.0) && !(eq(EXTRA, 1.0) || eq(EXTRA, 2.0))) {
+      // kanzashi with dangling chains
+      vec2 k0 = op + vec2(pside * 0.02, 0.01), k1 = op + vec2(-pside * 0.05, -0.02);
+      col = mix(col, metal(uTrim, vec3(0.0, 0.6, 0.8), L, jit), fill(sdTaper(q, k0, k1, 0.0028, 0.0022), 0.001));
+      for (int k = 0; k < 3; k++) {
+        float fk = float(k) - 1.0;
+        vec2 c0 = k0 + vec2(fk * 0.008, -0.006);
+        vec2 c1 = c0 + vec2(fk * 0.003, -0.035 - 0.008 * abs(fk));
+        col = mix(col, metal(uMetal, vec3(0.0, 0.3, 0.95), L, jit) * 1.2, fill(sdTaper(q, c0, c1, 0.0009, 0.0009), 0.0006));
+        col = mix(col, gem(q - c1, L), fill(length(q - c1) - 0.003, 0.0007));
+      }
+      vec2 fq2 = q - k0;
+      col = mix(col, shade(uAcc * 1.2 + 0.1, normalize(vec3(fq2 / 0.016, 0.8)), L, jit), fill(sdFlower(fq2, 0.016, 5.0), 0.001));
+      col = mix(col, vec3(0.95, 0.8, 0.3), fill(length(fq2) - 0.004, 0.001));
+    } else if (eq(ORNAMENT, 3.0)) {
+      // hair clips on the bangs
+      for (int k = 0; k < 2; k++) {
+        vec2 cp = hc + vec2(-pside * (0.055 + float(k) * 0.014), 0.058 + float(k) * 0.012);
+        vec2 cq = rot(-pside * 0.9) * (q - cp);
+        float d = sdBox(cq, vec2(0.016, 0.0028)) - 0.001;
+        col = mix(col, shade(mix(uAcc, uMetal, float(k) * 0.5), vec3(0.0, 0.5, 0.85), L, jit) + 0.05, fill(d, 0.0008));
+      }
+    } else if (eq(ORNAMENT, 4.0)) {
+      vec2 fp = hc + vec2(pside * hr.x * 0.9, hr.y * 0.48);
+      vec2 fq2 = q - fp;
+      for (int k = 0; k < 2; k++) {
+        float la = pside * (0.6 + float(k) * 1.2);
+        vec2 lq = rot(la) * (fq2 - vec2(pside * 0.018, -0.012 + float(k) * 0.02));
+        col = mix(col, shade(vec3(0.25, 0.45, 0.2), vec3(0.0, 0.3, 0.95), L, jit), fill(sdE(lq, vec2(0.018, 0.007)), 0.001));
+      }
+      col = mix(col, shade(uAcc * 1.15, normalize(vec3(fq2 / 0.026 * 0.5, 0.85)), L, jit), fill(sdFlower(rot(0.3) * fq2, 0.026, 5.0), 0.0012));
+      col = mix(col, vec3(0.95, 0.82, 0.35), fill(length(fq2) - 0.0055, 0.001));
     }
   }
 
   // ---- hats
   if (eq(HAT, 1.0)) {
+    // wizard hat
     float by = hc.y + hr.y * 0.72;
     vec2 brR = vec2(hr.x * 2.1, 0.032);
     float hgt = 0.27;
@@ -818,6 +1233,7 @@ void main() {
     col = mix(col, cc, fill(dCone, soft));
     col = mix(col, bcol, fill(dBrim, soft) * step(bq.y, 0.0));
   } else if (eq(HAT, 2.0)) {
+    // beret
     vec2 bc2 = hc + vec2(HAT_TILT * 0.035, hr.y * 0.9);
     vec2 bq = rot(HAT_TILT * 0.22) * (q - bc2);
     vec2 bR = vec2(hr.x * 1.32, 0.064);
@@ -836,6 +1252,7 @@ void main() {
     float dStalk = sdTaper(bq, vec2(0.0, bR.y * 0.9), vec2(0.004, bR.y + 0.016), 0.0045, 0.0028);
     col = mix(col, shade(uHat * 0.9, vec3(0.3, 0.5, 0.8), L, jit), fill(dStalk, 0.0012));
   } else if (eq(HAT, 4.0)) {
+    // circlet with a gem
     float cy = 0.085 - 0.8 * fq.x * fq.x;
     float d = max(abs(fq.y - cy) - 0.0055, dHead + 0.002);
     col = mix(col, metal(uMetal, normalize(vec3(fq.x / hr.x, (fq.y - cy) / 0.011, 1.0)), L, jit), fill(d, 0.0015));
@@ -862,6 +1279,108 @@ void main() {
     }
     hcol += uLight * 0.12 * smoothstep(0.012, 0.0, abs(fq.x)) * step(0.065, fq.y);
     col = mix(col, hcol, fill(dH, soft));
+  } else if (eq(HAT, 6.0)) {
+    // kasa: conical straw hat with a chin cord
+    vec2 apex = hc + vec2(HAT_TILT * 0.012, hr.y * 1.38);
+    float baseY = hc.y + hr.y * 0.55;
+    float hK = apex.y - baseY;
+    float wK = hr.x * 2.5;
+    col *= 1.0 - 0.5 * smoothstep(baseY - 0.15, baseY, q.y) * step(q.y, baseY) * smoothstep(wK, wK * 0.6, abs(q.x - apex.x));
+    for (int i = 0; i < 2; i++) {
+      float sx = i == 0 ? -1.0 : 1.0;
+      float dc = sdTaper(q, vec2(apex.x + sx * wK * 0.33, baseY - 0.01), vec2(sx * 0.03, hc.y - 0.165), 0.0016, 0.0016);
+      col = mix(col, shade(uAcc * 0.8, vec3(0.0, 0.3, 0.95), L, jit), fill(dc, 0.0008));
+    }
+    float along = clamp((apex.y - q.y) / hK, 0.0, 1.2);
+    float dTri = max(abs(q.x - apex.x) - wK * along, max(q.y - apex.y, baseY - q.y));
+    float dBase = sdE(q - vec2(apex.x, baseY), vec2(wK, 0.028));
+    float dK = min(dTri, dBase);
+    float sa = atan(q.x - apex.x, apex.y - q.y + 0.001);
+    float weave = 0.82 + 0.18 * step(0.5, fract(sa * 40.0 + step(0.5, fract(along * 18.0)) * 0.5));
+    float nxk = clamp((q.x - apex.x) / max(wK * along, 0.01), -1.0, 1.0);
+    vec3 kn = normalize(vec3(nxk * 0.8, 0.55, 0.6));
+    vec3 kc = shade(uHat * weave, kn, L, jit);
+    kc = mix(kc, shade(uHat * 0.55 * weave, vec3(0.0, -0.6, 0.8), L, jit), step(q.y, baseY) * step(0.0, -dBase));
+    col = mix(col, kc, fill(dK, soft));
+    col = mix(col, metal(uMetal, vec3(0.0, 0.5, 0.85), L, jit), fill(length(q - apex) - 0.008, 0.001));
+  } else if (eq(HAT, 7.0)) {
+    // hachimaki headband with fluttering knot tails
+    float cy = 0.095 - 0.7 * fq.x * fq.x;
+    float d = max(abs(fq.y - cy) - 0.011, sdE(fq - vec2(0.0, 0.02), hr * vec2(1.13, 1.08)));
+    vec3 hb = shade(uAcc, normalize(vec3(fq.x / hr.x, 0.0, 1.0)), L, jit) * (0.9 + 0.1 * sin(fq.y * 300.0 + fq.x * 40.0));
+    col = mix(col, hb, fill(d, 0.0015));
+    float ks = -PS;
+    vec2 k0 = hc + vec2(ks * hr.x * 1.05, 0.09);
+    float t1 = sdTaper(q, k0, k0 + vec2(ks * 0.11, 0.02 + 0.02 * sin(uSeed)), 0.011, 0.007);
+    float t2 = sdTaper(q, k0, k0 + vec2(ks * 0.09, -0.04), 0.01, 0.006);
+    col = mix(col, shade(uAcc * 0.9, normalize(vec3(ks * 0.4, 0.3, 0.85)), L, jit), fill(min(t1, t2), soft));
+  } else if (eq(HAT, 8.0)) {
+    // kabuto: lacquered bowl, flared neck guard, gilded kuwagata crest
+    float dSh = max(max(hr.x * 0.88 - abs(fq.x), abs(fq.x) - (hr.x * 1.16 + (0.06 - fq.y) * 0.45)), max(fq.y - 0.06, -0.06 - fq.y));
+    col = mix(col, lamellar(fq + vec2(0.0, 0.2), normalize(vec3(sign(fq.x) * 0.5, 0.2, 0.8)), L, jit), fill(dSh, soft));
+    col *= 1.0 - 0.45 * smoothstep(-0.02, 0.05, fq.y) * fill(dHead, soft);
+    vec2 hq3 = fq - vec2(0.0, 0.02);
+    vec2 hR = hr * vec2(1.13, 1.1);
+    float dDome = max(sdE(hq3, hR), 0.05 - fq.y);
+    vec3 kc = metal(uLacq, ellN(hq3, hR), L, jit);
+    kc *= 1.0 - 0.3 * smoothstep(0.8, 1.0, tri(atan(hq3.x, hq3.y + 0.25) * 4.0));
+    col = mix(col, kc, fill(dDome, soft));
+    col = mix(col, metal(uLacq * 0.7, vec3(0.0, 0.6, 0.8), L, jit), fill(sdE(fq - vec2(0.0, 0.055), vec2(hr.x * 1.2, 0.013)), soft));
+    for (int i = 0; i < 2; i++) {
+      float sx = i == 0 ? -1.0 : 1.0;
+      vec2 m0 = hc + vec2(sx * 0.008, 0.08), m1 = hc + vec2(sx * 0.05, 0.15), m2 = hc + vec2(sx * 0.075, 0.28);
+      float dM = min(sdTaper(q, m0, m1, 0.008, 0.006), sdTaper(q, m1, m2, 0.006, 0.0015));
+      col = mix(col, metal(vec3(0.9, 0.7, 0.3), normalize(vec3(sx * 0.4, 0.3, 0.86)), L, jit) * 1.1, fill(dM, soft));
+    }
+    vec2 mq = fq - vec2(0.0, 0.078);
+    col = mix(col, metal(vec3(0.9, 0.7, 0.3), normalize(vec3(mq / 0.014, 0.6)), L, jit) * 1.1, fill(length(mq) - 0.014, 0.001));
+    col = mix(col, uLacq * 0.6, fill(length(mq) - 0.006, 0.001));
+  } else if (eq(HAT, 9.0)) {
+    // feathered cap
+    vec2 cc9 = hc + vec2(0.0, hr.y * 0.78);
+    float fs9 = PS;
+    vec2 f0 = hc + vec2(-fs9 * hr.x * 0.9, hr.y * 0.66);
+    vec2 f1 = f0 + vec2(-fs9 * 0.07, 0.1), f2 = f0 + vec2(-fs9 * 0.03, 0.21);
+    float dFe = min(sdTaper(q, f0, f1, 0.004, 0.017), sdTaper(q, f1, f2, 0.017, 0.002));
+    float barbs = sin(dot(q - f0, normalize(vec2(fs9, 1.0))) * 500.0);
+    vec3 fcol = shade(uAcc * (0.85 + 0.2 * barbs), normalize(vec3(-fs9 * 0.4, 0.3, 0.86)), L, jit);
+    fcol = mix(fcol, vec3(0.9, 0.88, 0.8), fill(min(sdTaper(q, f0, f1, 0.0012, 0.0012), sdTaper(q, f1, f2, 0.0012, 0.0006)), 0.0006));
+    col = mix(col, fcol, fill(dFe, soft));
+    float dCap9 = min(sdE(q - cc9, vec2(hr.x * 1.12, 0.065)), sdTaper(q, cc9, cc9 + vec2(fs9 * 0.17, 0.035), 0.06, 0.004));
+    dCap9 = max(dCap9, (hc.y + hr.y * 0.6) - q.y);
+    col *= 1.0 - 0.4 * smoothstep(0.04, 0.0, dCap9) * (1.0 - fill(dCap9, soft)) * step(q.y, cc9.y);
+    float cf9 = sin(q.x * 60.0 + fbm(q * 6.0 + so) * 3.0);
+    vec3 c9 = shade(uHat, normalize(ellN(q - cc9, vec2(hr.x * 1.12, 0.065)) + vec3(0.0, 0.3, 0.0)), L, jit + 0.15 * cf9) * (0.93 + 0.07 * cf9);
+    col = mix(col, c9, fill(dCap9, soft));
+    float inBand = band(q.y, hc.y + hr.y * 0.6, hc.y + hr.y * 0.6 + 0.022) * fill(dCap9 - 0.004, soft);
+    col = mix(col, shade(uHat * 0.65, vec3(0.0, 0.2, 0.95), L, jit), inBand);
+  } else if (eq(HAT, 10.0)) {
+    // fur trapper hat with ear flaps
+    vec2 hq10 = fq - vec2(0.0, 0.05);
+    vec2 r10 = vec2(hr.x * 1.2, hr.y * 0.85);
+    float dDome = max(sdE(hq10, r10), 0.055 - fq.y);
+    float dFlap = sdBox(vec2(abs(fq.x) - hr.x * 1.02, fq.y), vec2(hr.x * 0.2, 0.07)) - 0.012;
+    float dF = min(dDome, dFlap) + 0.007 * fbm(q * 40.0 + so);
+    col *= 1.0 - 0.45 * smoothstep(-0.02, 0.055, fq.y) * fill(dHead, soft);
+    float fz = noise(vec2(atan(hq10.x, hq10.y) * 40.0, length(hq10) * 30.0) + so);
+    vec3 fcol = shade(uFur * (0.75 + 0.45 * fz), normalize(ellN(hq10, r10) + vec3(0.0, 0.2, 0.0)), L, jit + 0.2 * fz);
+    fcol = mix(fcol, shade(uLeather, ellN(hq10, r10), L, jit), fill(sdE(hq10 - vec2(0.0, 0.03), r10 * vec2(0.8, 0.75)), 0.004) * step(0.1, fq.y));
+    col = mix(col, fcol, fill(dF, soft));
+  } else if (eq(HAT, 11.0)) {
+    // flower crown
+    for (int k = 0; k < 7; k++) {
+      float fk = float(k) - 3.0;
+      float x = fk * hr.x * 0.3;
+      vec2 fp = hc + vec2(x, hr.y * 0.66 - 1.3 * x * x);
+      vec2 fq11 = q - fp;
+      float dl = sdE(rot(fk * 0.9 + 0.5) * (fq11 - vec2(0.012, -0.004)), vec2(0.016, 0.006));
+      col = mix(col, shade(vec3(0.25, 0.45, 0.2), vec3(0.0, 0.3, 0.95), L, jit), fill(dl, 0.001));
+      float h = hash1(vec2(fk, uSeed));
+      vec3 pc = h < 0.4 ? uAcc : (h < 0.7 ? vec3(0.95, 0.92, 0.88) : vec3(0.95, 0.75, 0.3));
+      float rr = 0.015 + 0.004 * h;
+      col = mix(col, shade(pc, normalize(vec3(fq11 / rr * 0.5, 0.9)), L, jit), fill(sdFlower(rot(h * 6.0) * fq11, rr, 5.0), 0.001));
+      col = mix(col, vec3(0.95, 0.8, 0.3) * 0.9, fill(length(fq11) - rr * 0.25, 0.001));
+    }
   }
 
   // ---- hood front: rim + deep shadow on the face
@@ -877,13 +1396,41 @@ void main() {
     col = mix(col, c, fill(dHoodOuter, soft) * (1.0 - inOpen));
   }
 
+  // ---- dragon horns (poke through hair, hats and hoods)
+  if (HORNS > 0.5) {
+    for (int i = 0; i < 2; i++) {
+      float sx = i == 0 ? -1.0 : 1.0;
+      vec2 h0 = hc + vec2(sx * hr.x * 0.5, hr.y * 0.72);
+      vec2 h1, h2;
+      vec3 rr = vec3(0.022, 0.014, 0.002);
+      bool antler = eq(HORNS, 4.0);
+      if (eq(HORNS, 1.0)) { h1 = h0 + vec2(sx * 0.07, 0.09); h2 = h0 + vec2(sx * 0.19, 0.12); }
+      else if (eq(HORNS, 2.0)) { h1 = h0 + vec2(sx * 0.035, 0.1); h2 = h0 + vec2(sx * 0.09, 0.2); }
+      else if (eq(HORNS, 3.0)) { h1 = h0 + vec2(sx * 0.045, 0.045); h2 = h0 + vec2(sx * 0.028, 0.095); rr = vec3(0.016, 0.011, 0.002); }
+      else { h1 = h0 + vec2(sx * 0.03, 0.1); h2 = h0 + vec2(sx * 0.06, 0.21); rr = vec3(0.012, 0.008, 0.002); }
+      float d = hornD(q, h0, h1, h2, rr, sx, antler);
+      vec2 e2 = vec2(0.002, 0.0);
+      vec2 g = vec2(hornD(q + e2, h0, h1, h2, rr, sx, antler) - d, hornD(q + e2.yx, h0, h1, h2, rr, sx, antler) - d);
+      g = normalize(g + 1e-6);
+      float t = clamp(-d / 0.012, 0.0, 1.0);
+      vec3 hn = normalize(vec3(g * (1.0 - t), t + 0.1));
+      float tt = clamp(length(q - h0) / length(h2 - h0), 0.0, 1.0);
+      vec3 hcol = mix(uHorn * 0.55, uHorn * 1.2 + 0.05, smoothstep(0.0, 1.0, tt));
+      hcol *= 0.88 + 0.12 * step(0.5, fract(length(q - h0) * 60.0));
+      vec3 c = shade(hcol, hn, L, jit) + uLight * 0.25 * pow(max(dot(hn, L), 0.0), 8.0);
+      col = mix(col, c * mix(0.7, 1.0, smoothstep(0.0, 0.25, tt)), fill(d, soft));
+    }
+  }
+
   // ---- glowing eyes
   if (GLOW_EYES > 0.5) {
     for (int i = 0; i < 2; i++) {
       float sx = i == 0 ? -1.0 : 1.0;
+      if (EYEPATCH > 0.5 && sx == pside) continue;
+      vec3 eyeCol = i == 0 ? uEye2 : uEye;
       vec2 d = (fq - vec2(sx * es, 0.0)) * vec2(0.7, 1.4);
-      addGlow += uEye * 0.5 * exp(-length(d) / 0.016);
-      col = mix(col, uEye * 1.4 + 0.25, fill(length(fq - vec2(sx * es, 0.0)) - 0.005, 0.002) * 0.85);
+      addGlow += eyeCol * 0.5 * exp(-length(d) / 0.016);
+      col = mix(col, eyeCol * 1.4 + 0.25, fill(length(fq - vec2(sx * es, 0.0)) - 0.005, 0.002) * 0.85);
     }
   }
   col += addGlow;
@@ -935,45 +1482,74 @@ function hsl(h, s, l) {
 const mix = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
 const mul = (a, b) => a.map((v, i) => v * (Array.isArray(b) ? b[i] : b));
 
-// Order matters: packed into the shader's uQ[9] vec4 array.
+// Order matters: packed into the shader's uQ[13] vec4 array.
 const PARAMS = [
   'headW', 'headH', 'jaw', 'eyeSep',
-  'eyeSize', 'hairStyle', 'hairLen', 'beard',
-  'scar', 'paint', 'lightAng', 'browTilt',
+  'eyeSize', 'fringe', 'hairLen', 'beard',
+  'scar', 'mark', 'lightAng', 'browTilt',
   'mouthW', 'ear', 'glowEyes', 'part',
   'mouthCurve', 'hairVol', 'female', 'age',
   'race', 'outfit', 'hat', 'prop',
   'amulet', 'earrings', 'nose', 'bodyW',
   'horns', 'freckles', 'hatTilt', 'propSide',
-  'fur',
+  'fur', 'sideLen', 'sideIn', 'back',
+  'extra', 'ahoge', 'ornament', 'eyeShape',
+  'pupil', 'eyepatch', 'glasses', 'mask',
+  'scarf', 'scales', 'fang', 'mole',
+  'pattern',
 ];
+const COLOR_KEYS = ['skin', 'hair', 'cloth', 'trim', 'hat', 'bg', 'eye', 'eye2', 'light', 'paint', 'metal', 'leather', 'magic', 'lip', 'horn', 'fur', 'scale', 'acc', 'lacq'];
 const RACE_ID = { human: 0, elf: 1, dragon: 2, duende: 3 };
+
+// fringe: -1 none, 0 swept, 1 blunt, 2 spiky, 3 slicked back
+// back: 0 none, 1 loose, 2 straight curtain, 3 bob
+// extra: 0 none, 1 top bun, 2 odango, 3 twin tails, 4 high ponytail, 5 side braid, 6 samurai topknot
+const HAIR_STYLES = [
+  { name: 'Rapado', fringe: -1 },
+  { name: 'Pelo corto', fringe: 0, sideIn: 0.84, side: () => -0.03 },
+  { name: 'Pelo largo', fringe: 0, sideIn: 0.84, side: len => -0.03 - 0.12 * len, back: 1 },
+  { name: 'Moño', fringe: 0, sideIn: 0.84, side: () => -0.03, extra: 1 },
+  { name: 'Corte hime', fringe: 1, sideIn: 0.7, side: () => -0.12, back: 2 },
+  { name: 'Moños odango', fringe: 0, sideIn: 0.84, side: () => -0.03, extra: 2 },
+  { name: 'Coletas', fringe: 1, sideIn: 0.8, side: () => -0.06, extra: 3 },
+  { name: 'Cola alta', fringe: 0, sideIn: 0.84, side: () => -0.04, extra: 4 },
+  { name: 'Bob con flequillo', fringe: 1, sideIn: 0.74, side: () => -0.11, back: 3 },
+  { name: 'Pelo en punta', fringe: 2, sideIn: 0.86, side: () => -0.02 },
+  { name: 'Trenza lateral', fringe: 0, sideIn: 0.84, side: () => -0.05, extra: 5 },
+  { name: 'Moño samurái', fringe: 3, sideIn: 0.86, side: () => -0.02, extra: 6 },
+  { name: 'Largo con flequillo', fringe: 1, sideIn: 0.84, side: len => -0.03 - 0.12 * len, back: 1 },
+];
+const HATS = [null, 'Sombrero de mago', 'Boina', 'Capucha', 'Diadema', 'Yelmo', 'Kasa de paja', 'Hachimaki', 'Kabuto samurái', 'Gorro con pluma', 'Gorro de piel', 'Corona de flores'];
 
 const LABELS = {
   race: { human: ['Humano', 'Humana'], elf: ['Elfo', 'Elfa'], dragon: ['Dragonoide', 'Dragonoide'], duende: ['Duende', 'Duende'] },
   cls: { mage: ['Mago', 'Maga'], warrior: ['Guerrero', 'Guerrera'], ranger: ['Explorador', 'Exploradora'], survivor: ['Superviviente', 'Superviviente'] },
   age: { young: ['Joven', 'Joven'], adult: ['Adulto', 'Adulta'], old: ['Anciano', 'Anciana'] },
-  hairStyle: ['Rapado', 'Pelo corto', 'Pelo largo', 'Moño', 'Corte hime', 'Moños odango'],
-  hat: [null, 'Sombrero de mago', 'Boina', 'Capucha', 'Diadema', 'Yelmo'],
-  outfit: ['Túnica', 'Armadura de placas', 'Armadura de cuero', 'Pieles de superviviente'],
-  prop: [null, 'Bastón', 'Espada', 'Carcaj'],
-  paint: [null, 'Pintura: banda', 'Pintura: garras', 'Pintura: línea'],
+  outfit: ['Túnica', 'Armadura de placas', 'Armadura de cuero', 'Pieles de superviviente', 'Kimono', 'Armadura samurái'],
+  prop: [null, 'Bastón', 'Espada', 'Carcaj', 'Katana', 'Arco', 'Escudo', 'Grimorio flotante', 'Orbe arcano', 'Hacha', 'Lanza'],
+  mark: [null, 'Pintura: banda', 'Pintura: garras', 'Pintura: línea', 'Marca mística', 'Tatuaje élfico'],
+  eyeShape: ['Ojos normales', 'Ojos afilados', 'Ojos caídos', 'Ojos grandes', 'Mirada somnolienta'],
+  pupil: [null, 'Pupila de reptil', 'Pupila de estrella'],
+  ornament: [null, 'Lazo', 'Kanzashi', 'Horquillas', 'Flor en el pelo'],
+  glasses: [null, 'Gafas redondas', 'Monóculo'],
+  pattern: [null, 'Estampado seigaiha', 'Estampado ichimatsu', 'Estampado de sakura'],
+  horns: [null, 'Cuernos hacia atrás', 'Cuernos altos', 'Cuernos cortos', 'Astas de dragón'],
 };
 
 const NAME_PARTS = {
-  human: { a: ['Ai', 'Mi', 'Ka', 'Le', 'So', 'Ha', 'Ed', 'Ro', 'Al', 'Yu'], f: ['ra', 'na', 'ria', 'lena', 'mi', 'ko'], m: ['ric', 'dan', 'mar', 'bert', 'ron', 'ken'] },
+  human: { a: ['Sa', 'Ha', 'Yu', 'Ai', 'Mi', 'Ka', 'Ro', 'Le', 'Ed', 'Al', 'Ren', 'Ta'], f: ['kura', 'na', 'ki', 'ko', 'mi', 'ria', 'lena'], m: ['ro', 'ta', 'ji', 'suke', 'ric', 'dan', 'mar'] },
   elf: { a: ['Ae', 'Lae', 'Syl', 'Tha', 'Ely', 'Fae', 'Ith'], f: ['thiel', 'wen', 'riel', 'lindë', 'nya'], m: ['lion', 'ndor', 'ras', 'thil', 'mir'] },
-  dragon: { a: ['Vra', 'Kor', 'Zha', 'Thy', 'Ixa', 'Dra', 'Sor'], f: ['ssa', 'thra', 'kira', 'vesh'], m: ['xus', 'gath', 'rik', 'zhar'] },
+  dragon: { a: ['Ryu', 'Kae', 'Hi', 'Shi', 'Vra', 'Zha', 'Tat', 'Kou'], f: ['ka', 'ra', 'sha', 'ne', 'mei'], m: ['ga', 'ma', 'zhar', 'ken', 'ryu'] },
   duende: { a: ['Pip', 'Bim', 'To', 'Nib', 'Fen', 'Wi', 'Qui'], f: ['ette', 'bel', 'lina', 'sy'], m: ['kin', 'wick', 'bo', 'nock'] },
 };
 
 function genCharacter(seed, o = {}) {
   const h = xmur3(String(seed));
   const rng = mulberry32(h());
-  const noiseSeed = (h() % 10000) / 500;
+  let noiseSeed = (h() % 10000) / 500;
   const r = (a, b) => a + (b - a) * rng();
   const pick = a => a[Math.floor(rng() * a.length)];
-  const chance = p => rng() < p;
+  const chance = x => rng() < x;
   const wpick = opts => {
     let t = rng() * opts.reduce((s, x) => s + x[1], 0);
     for (const [v, wgt] of opts) { if ((t -= wgt) < 0) return v; }
@@ -981,68 +1557,96 @@ function genCharacter(seed, o = {}) {
   };
   const jit = (c, a) => c.map(v => Math.min(1, Math.max(0, v + (rng() - 0.5) * a)));
 
-  const race = o.race || wpick([['human', 4], ['elf', 2.5], ['dragon', 1.5], ['duende', 2]]);
+  const race = o.race || wpick([['human', 4], ['elf', 2.5], ['dragon', 2], ['duende', 2]]);
   const sex = o.sex || (chance(0.5) ? 'f' : 'm');
   const age = o.age || wpick([['young', 3.5], ['adult', 4], ['old', 2.5]]);
   const cls = o.cls || pick(['mage', 'warrior', 'ranger', 'survivor']);
   const F = sex === 'f';
   const old = age === 'old', young = age === 'young';
 
+  // ---- colours
   const humanSkins = [[0.95,0.80,0.69],[0.89,0.69,0.55],[0.78,0.57,0.43],[0.62,0.43,0.30],[0.45,0.30,0.21],[0.32,0.21,0.15]];
   let skin = {
     human: () => pick(humanSkins),
     elf: () => pick([...humanSkins.slice(0, 3), [0.84,0.8,0.88], [0.45,0.4,0.55]]),
-    dragon: () => pick([[0.62,0.2,0.14],[0.66,0.45,0.2],[0.22,0.45,0.3],[0.2,0.32,0.55],[0.8,0.62,0.25],[0.24,0.22,0.26]]),
+    dragon: () => pick([...humanSkins, [0.93,0.86,0.82]]),
     duende: () => pick([...humanSkins.slice(0, 4), [0.62,0.68,0.45], [0.72,0.55,0.45]]),
   }[race]();
   skin = jit(skin, 0.05);
   if (old) { const g = (skin[0] + skin[1] + skin[2]) / 3; skin = mix(skin, [g, g, g], 0.2); }
-  const skin2 = race === 'dragon' ? mix(skin, [0.92, 0.82, 0.6], 0.55) : skin;
+
+  const scale = jit(pick([[0.7,0.15,0.12],[0.72,0.48,0.2],[0.2,0.55,0.35],[0.2,0.38,0.7],[0.9,0.72,0.3],[0.18,0.17,0.22],[0.85,0.86,0.92],[0.5,0.3,0.7]]), 0.05);
 
   const naturals = [[0.08,0.06,0.05],[0.22,0.13,0.07],[0.42,0.17,0.07],[0.72,0.56,0.32],[0.55,0.35,0.18]];
-  const fantasy = [[0.95,0.55,0.72],[0.6,0.45,0.85],[0.3,0.7,0.75],[0.85,0.87,0.92],[0.2,0.25,0.5]];
-  let hair = chance(race === 'elf' || race === 'duende' ? 0.25 : 0.1) ? pick(fantasy) : pick(naturals);
+  const fantasy = [[1.0,0.48,0.68],[0.6,0.45,0.85],[0.3,0.7,0.75],[0.85,0.87,0.92],[0.2,0.25,0.5],[0.7,0.12,0.1]];
+  let hair = chance({ human: 0.12, elf: 0.25, dragon: 0.3, duende: 0.25 }[race]) ? pick(fantasy) : pick(naturals);
   if (race === 'duende' && chance(0.3)) hair = pick([[0.75,0.3,0.1],[0.9,0.5,0.15]]);
+  if (race === 'dragon' && chance(0.3)) hair = mix(scale, [0.05, 0.05, 0.05], 0.25);
   if (old) hair = mix(hair, pick([[0.78,0.77,0.75],[0.9,0.9,0.88],[0.55,0.55,0.55]]), r(0.7, 1));
   else if (age === 'adult' && chance(0.2)) hair = mix(hair, [0.7, 0.7, 0.7], 0.35);
   hair = jit(hair, 0.04);
 
-  let hairStyle;
-  if (race === 'dragon') hairStyle = 0;
-  else if (F) hairStyle = wpick([[2, 3], [4, 2], [5, 1.5], [3, 2], [1, 1.2]]);
-  else hairStyle = wpick([[1, 4], [2, 1.8], [3, 1.5], [0, old ? 3 : 1]]);
-  const beardP = race === 'elf' ? 0.08 : young ? 0.15 : 0.5;
-  const beard = !F && race !== 'dragon' && chance(beardP) ? r(0.25, 1) : 0;
-
+  // ---- class kit
   const kit = {
-    mage: () => ({ outfit: 0, hat: wpick([[1, 3.5], [2, 1.5], [4, 2], [3, 1.5], [0, 1.5]]), prop: chance(0.65) ? 1 : 0, amulet: chance(0.6) }),
-    warrior: () => ({ outfit: 1, hat: wpick([[5, 3], [0, 5], [4, 1]]), prop: chance(0.65) ? 2 : 0, amulet: chance(0.15) }),
-    ranger: () => ({ outfit: 2, hat: wpick([[3, 4], [0, 5]]), prop: chance(0.75) ? 3 : 0, amulet: chance(0.2) }),
-    survivor: () => ({ outfit: 3, hat: wpick([[3, 3], [0, 6]]), prop: wpick([[0, 4], [2, 2], [3, 2]]), amulet: chance(0.25) }),
+    mage: () => ({
+      outfit: wpick([[0, 3], [4, 1.5]]),
+      hat: wpick([[1, 3], [2, 1.5], [4, 1.5], [3, 1.2], [11, F ? 1.2 : 0.4], [6, 0.3], [0, 1.2]]),
+      prop: wpick([[1, 3], [7, 1.5], [8, 1.5], [0, 1]]),
+      amulet: chance(0.6),
+    }),
+    warrior: () => {
+      const outfit = wpick([[1, 3], [5, 2]]);
+      const samurai = outfit === 5;
+      return {
+        outfit,
+        hat: samurai ? wpick([[8, 3], [7, 2], [0, 2]]) : wpick([[5, 2.5], [7, 1], [4, 0.7], [0, 3]]),
+        prop: wpick([[2, samurai ? 0.5 : 2], [4, samurai ? 4 : 1], [6, 1.5], [10, 1], [9, 1], [0, 1]]),
+        amulet: chance(0.15),
+      };
+    },
+    ranger: () => ({
+      outfit: wpick([[2, 3], [4, 1]]),
+      hat: wpick([[3, 3], [9, 2], [6, 1.2], [7, 0.8], [0, 2.5]]),
+      prop: wpick([[3, 2.5], [5, 2], [4, 0.7], [10, 0.5], [0, 1]]),
+      amulet: chance(0.2),
+    }),
+    survivor: () => ({
+      outfit: 3,
+      hat: wpick([[3, 2], [10, 2], [6, 1], [7, 1], [0, 3]]),
+      prop: wpick([[9, 2], [10, 1.5], [2, 1], [5, 1], [3, 0.8], [0, 2]]),
+      amulet: chance(0.25),
+    }),
   }[cls]();
 
   const cloth = {
-    mage: () => hsl(pick([0.6, 0.66, 0.75, 0.83, 0.0, 0.45]) + r(-0.02, 0.02), r(0.35, 0.6), r(0.22, 0.36)),
+    mage: () => hsl(pick([0.6, 0.66, 0.75, 0.83, 0.0, 0.45, 0.95]) + r(-0.02, 0.02), r(0.35, 0.6), r(0.22, 0.38)),
     warrior: () => hsl(pick([0.0, 0.6, 0.33, 0.12]), r(0.4, 0.6), r(0.25, 0.35)),
-    ranger: () => hsl(pick([0.25, 0.3, 0.08, 0.1]), r(0.2, 0.4), r(0.2, 0.3)),
+    ranger: () => hsl(pick([0.25, 0.3, 0.08, 0.1, 0.55]), r(0.2, 0.4), r(0.2, 0.3)),
     survivor: () => hsl(pick([0.07, 0.09, 0.25, 0.33, 0.0, 0.6]), r(0.18, 0.4), r(0.18, 0.32)),
   }[cls]();
-  const trim = pick([[0.85,0.68,0.32],[0.8,0.8,0.82],[0.85,0.82,0.75],[0.6,0.2,0.2]]);
-  const hat = cls === 'mage' && chance(0.5) ? hsl(r(0, 1), r(0.3, 0.55), r(0.2, 0.35)) : mul(cloth, 0.85);
+  const trim = pick([[0.85,0.68,0.32],[0.8,0.8,0.82],[0.85,0.82,0.75],[0.6,0.2,0.2],[0.12,0.12,0.14]]);
   const magic = pick([[0.4,0.8,1.0],[0.8,0.45,1.0],[1.0,0.6,0.25],[0.5,1.0,0.6],[1.0,0.45,0.7]]);
   const metalC = pick([[0.62,0.64,0.68],[0.85,0.65,0.3],[0.7,0.45,0.25],[0.32,0.32,0.36]]);
   const leather = jit([0.35, 0.21, 0.12], 0.08);
-  const horn = pick([[0.85,0.8,0.68],[0.3,0.26,0.22],[0.6,0.5,0.35]]);
+  const horn = pick([[0.85,0.8,0.68],[0.2,0.18,0.2],[0.55,0.42,0.3],[0.9,0.75,0.4], mix(scale, [0, 0, 0], 0.3)]);
   const fur = jit(pick([[0.42,0.33,0.24],[0.55,0.53,0.5],[0.8,0.78,0.74],[0.25,0.2,0.16]]), 0.06);
   const paint = pick([[0.6,0.12,0.08],[0.15,0.3,0.6],[0.85,0.83,0.78],[0.06,0.05,0.05]]);
+  let acc = pick([[0.75,0.15,0.15],[0.9,0.88,0.85],[0.95,0.55,0.7],[0.9,0.7,0.3],[0.4,0.65,0.9],[0.12,0.12,0.14],[0.55,0.35,0.8],[0.3,0.6,0.35]]);
+  const lacq = pick([[0.5,0.08,0.06],[0.09,0.08,0.08],[0.12,0.16,0.32],[0.12,0.25,0.18]]);
   const lip = F ? mix(mul(skin, [1.0, 0.7, 0.72]), [0.72, 0.3, 0.38], 0.35) : mul(skin, [1.05, 0.8, 0.8]);
 
-  const glowP = race === 'dragon' ? 0.25 : cls === 'mage' ? 0.15 : 0.03;
-  const glowEyes = chance(glowP);
+  // ---- eyes
+  const glowEyes = chance(race === 'dragon' ? 0.15 : cls === 'mage' ? 0.12 : 0.03);
+  const natEyes = [[0.35,0.22,0.1],[0.25,0.45,0.25],[0.25,0.45,0.7],[0.6,0.45,0.15],[0.45,0.45,0.45]];
+  const fantEyes = [[0.55,0.35,0.8],[0.3,0.7,0.6],[0.8,0.25,0.3],[0.95,0.7,0.2]];
+  const dragonEyes = [[1.0,0.75,0.2],[1.0,0.45,0.15],[0.85,0.2,0.2],[0.5,0.9,0.3],[0.4,0.8,1.0],[0.7,0.4,1.0]];
   let eye;
   if (glowEyes) eye = pick([[0.3,0.9,1.0],[1.0,0.55,0.15],[0.6,1.0,0.4],[0.8,0.45,1.0]]);
-  else if (race === 'dragon') eye = pick([[1.0,0.75,0.2],[1.0,0.45,0.15],[0.5,0.9,0.3],[0.4,0.8,1.0]]);
-  else eye = pick([[0.35,0.22,0.1],[0.25,0.45,0.25],[0.25,0.45,0.7],[0.6,0.45,0.15],[0.45,0.45,0.45], ...(race === 'elf' ? [[0.55,0.35,0.8],[0.3,0.7,0.6]] : [])]);
+  else if (race === 'dragon') eye = pick(dragonEyes);
+  else if (race === 'elf') eye = pick([...natEyes, ...fantEyes]);
+  else eye = pick(chance(0.15) ? fantEyes : natEyes);
+  const hetero = chance(0.07);
+  const eye2 = hetero ? pick([...natEyes, ...fantEyes, ...dragonEyes]) : eye;
 
   const lightType = cls === 'mage' ? wpick([['arcane', 5], ['fire', 3], ['moon', 2]]) : wpick([['fire', 5], ['moon', 3], ['arcane', 2]]);
   let light, lightAng;
@@ -1058,10 +1662,25 @@ function genCharacter(seed, o = {}) {
   }
   const bg = hsl(r(0, 1), r(0.2, 0.4), r(0.18, 0.3));
 
-  const headW = { human: r(0.92, 1.06), elf: r(0.86, 0.96), dragon: r(0.98, 1.1), duende: r(1.08, 1.2) }[race] * (F ? 0.96 : 1.02);
-  const jawBase = { human: r(0.15, 0.3), elf: r(0.3, 0.4), dragon: r(0.1, 0.22), duende: r(0.2, 0.32) }[race];
-  const eyeBase = { human: r(0.9, 1.1), elf: r(1.05, 1.2), dragon: r(0.95, 1.1), duende: r(1.2, 1.4) }[race];
-  const noseBase = { human: r(0.9, 1.15), elf: r(0.8, 0.95), dragon: 1, duende: r(1.5, 1.9) }[race];
+  // ---- shape and accessories
+  const headW = { human: r(0.92, 1.06), elf: r(0.86, 0.96), dragon: r(0.92, 1.04), duende: r(1.08, 1.2) }[race] * (F ? 0.96 : 1.02);
+  const jawBase = { human: r(0.15, 0.3), elf: r(0.3, 0.4), dragon: r(0.18, 0.32), duende: r(0.2, 0.32) }[race];
+  const eyeBase = { human: r(0.9, 1.1), elf: r(1.05, 1.2), dragon: r(0.95, 1.12), duende: r(1.2, 1.4) }[race];
+  const noseBase = { human: r(0.9, 1.15), elf: r(0.8, 0.95), dragon: r(0.85, 1.05), duende: r(1.5, 1.9) }[race];
+
+  const hairStyle = F
+    ? wpick([[2, 2], [4, 1.5], [5, 1], [6, 1.5], [7, 1.5], [8, 1.2], [10, 1.2], [3, 1], [1, 0.6], [12, 1.2], [9, 0.3]])
+    : wpick([[1, 3], [9, 2], [7, 1], [11, 1.2], [2, 1], [3, 0.6], [0, old ? 2.5 : 0.4], [10, 0.3], [12, 0.4]]);
+  const beardP = race === 'elf' ? 0.08 : race === 'dragon' ? 0.2 : young ? 0.15 : 0.5;
+
+  let mark = 0;
+  if (cls === 'survivor' && chance(0.45)) mark = 1 + Math.floor(rng() * 3);
+  else if (cls === 'ranger' && chance(0.2)) mark = 1 + Math.floor(rng() * 3);
+  else if (race === 'elf' && chance(0.3)) mark = 5;
+  else if (cls === 'mage' && chance(0.25)) mark = 4;
+
+  const glasses = chance(cls === 'mage' ? (old ? 0.3 : 0.1) : 0.03) ? wpick([[1, 2], [2, old ? 2 : 0.7]]) : 0;
+  const mask = chance({ ranger: 0.22, survivor: 0.15, warrior: 0.05, mage: 0.02 }[cls]);
 
   const p = {
     headW,
@@ -1069,13 +1688,14 @@ function genCharacter(seed, o = {}) {
     jaw: jawBase + (F ? 0.1 : 0) + (young ? 0.03 : 0),
     eyeSep: r(0.046, 0.055) * headW,
     eyeSize: eyeBase * (F ? 1.06 : 1) * (young ? 1.05 : old ? 0.94 : 1),
-    hairStyle, hairLen: r(0.3, 1), beard,
+    hairStyle, hairLen: r(0.3, 1),
+    beard: !F && chance(beardP) ? r(0.25, 1) : 0,
     scar: chance(cls === 'warrior' || cls === 'survivor' ? 0.35 : 0.1) ? 1 : 0,
-    paint: chance(cls === 'survivor' ? 0.45 : cls === 'ranger' ? 0.2 : 0.05) ? 1 + Math.floor(rng() * 3) : 0,
+    mark,
     lightAng,
     browTilt: r(-0.006, 0.008),
-    mouthW: r(0.028, 0.038) * headW * (race === 'dragon' ? 1.3 : 1),
-    ear: { human: 0, elf: 1, duende: 2, dragon: 3 }[race],
+    mouthW: r(0.028, 0.038) * headW,
+    ear: { human: 0, elf: 1, duende: 2, dragon: wpick([[0, 2], [1, 2], [3, 1]]) }[race],
     glowEyes: glowEyes ? 1 : 0,
     part: r(-1, 1),
     mouthCurve: r(-1, 3),
@@ -1087,46 +1707,104 @@ function genCharacter(seed, o = {}) {
     amulet: kit.amulet ? 1 : 0,
     earrings: chance(F ? 0.5 : 0.15) ? 1 : 0,
     nose: noseBase * (F ? 0.9 : 1),
-    bodyW: (race === 'duende' ? 0.82 : 1) * (F ? 0.9 : 1) * (race === 'dragon' ? 1.08 : 1),
-    horns: race === 'dragon' ? (chance(0.6) ? 1 : 2) : 0,
-    freckles: race !== 'dragon' && chance(young ? 0.4 : 0.15) ? 1 : 0,
+    bodyW: (race === 'duende' ? 0.82 : 1) * (F ? 0.9 : 1),
+    horns: race === 'dragon' ? wpick([[1, 3], [2, 2], [3, 2], [4, 1.5]]) : 0,
+    freckles: chance(young ? 0.35 : 0.12) ? 1 : 0,
     hatTilt: r(-1, 1),
     propSide: chance(0.5) ? 1 : -1,
     fur: kit.outfit === 3 && chance(0.6) ? 1 : 0,
+    ahoge: chance(young ? 0.3 : 0.15) ? 1 : 0,
+    ornament: 0,
+    eyeShape: wpick([[0, 3], [1, 1.5], [2, 1.2], [3, F ? 2 : 0.8], [4, 0.8]]),
+    pupil: race === 'dragon' ? (chance(0.8) ? 1 : 0) : (cls === 'mage' && chance(0.08) ? 2 : 0),
+    eyepatch: !glasses && chance(cls === 'warrior' || cls === 'survivor' ? 0.1 : 0.02) ? 1 : 0,
+    glasses,
+    mask: mask ? 1 : 0,
+    scarf: chance({ survivor: 0.4, ranger: 0.3, warrior: 0.08, mage: 0.08 }[cls]) ? 1 : 0,
+    scales: race === 'dragon' ? r(0.6, 1) : 0,
+    fang: chance({ dragon: 0.5, duende: 0.25, human: 0.08, elf: 0.05 }[race]) ? 1 : 0,
+    mole: chance(0.15) ? 1 : 0,
+    pattern: 0,
+    hetero: hetero ? 1 : 0,
   };
-  const colors = { skin, skin2, hair, cloth, trim, hat, bg, eye, light, paint, metal: metalC, leather, magic, lip, horn, fur };
-
   Object.assign(p, o.set || {});
+
+  // ---- things that depend on the (possibly overridden) choices above
+  if (p.outfit === 4 && chance(0.7)) p.pattern = 1 + Math.floor(rng() * 3);
+  if (p.hairStyle !== 0 && chance(F ? 0.55 : 0.06)) {
+    const hs = p.hairStyle;
+    if (hs === 3 || hs === 5) p.ornament = wpick([[2, 3], [1, 1], [4, 1]]);
+    else if (hs === 6 || hs === 7) p.ornament = wpick([[1, 3], [3, 1], [4, 0.5]]);
+    else p.ornament = wpick([[1, 1.5], [2, 1.2], [3, 1.5], [4, 1.2]]);
+  }
+  if (p.hat === 7) acc = pick([[0.9,0.88,0.85],[0.75,0.15,0.15],[0.12,0.12,0.14]]);
+  let hatC;
+  if (p.hat === 6) hatC = chance(0.7) ? jit([0.78, 0.64, 0.38], 0.05) : [0.12, 0.1, 0.1];
+  else if (p.hat === 9) hatC = hsl(pick([0.25, 0.3, 0.08, 0.0]), r(0.3, 0.5), r(0.2, 0.32));
+  else if (p.hat === 10) hatC = fur;
+  else if ((p.hat === 1 || p.hat === 2) && cls === 'mage' && chance(0.5)) hatC = hsl(r(0, 1), r(0.3, 0.55), r(0.2, 0.35));
+  else hatC = mul(cloth, 0.85);
+
+  const colors = { skin, hair, cloth, trim, hat: hatC, bg, eye, eye2, light, paint, metal: metalC, leather, magic, lip, horn, fur, scale, acc, lacq };
   Object.assign(colors, o.colors || {});
 
   const np = NAME_PARTS[race];
-  const name = pick(np.a) + pick(F ? np.f : np.m);
-  const g = F ? 1 : 0;
-  const traits = [LABELS.age[age][g]];
-  if (p.hairStyle > 0 || race !== 'dragon') traits.push(LABELS.hairStyle[p.hairStyle]);
-  if (LABELS.hat[p.hat]) traits.push(LABELS.hat[p.hat]);
-  traits.push(LABELS.outfit[p.outfit]);
-  if (LABELS.prop[p.prop]) traits.push(LABELS.prop[p.prop]);
-  if (p.amulet) traits.push('Amuleto');
-  if (p.earrings) traits.push('Pendientes');
-  if (p.beard) traits.push('Barba');
-  if (p.horns) traits.push('Cuernos');
-  if (p.freckles) traits.push('Pecas');
-  if (p.scar) traits.push('Cicatriz');
-  if (LABELS.paint[p.paint]) traits.push(LABELS.paint[p.paint]);
-  if (p.glowEyes) traits.push('Ojos brillantes');
-  if (p.fur) traits.push('Cuello de piel');
-  traits.push('Luz: ' + { fire: 'hoguera', moon: 'luna', arcane: 'arcana' }[lightType]);
+  let name = pick(np.a) + pick(F ? np.f : np.m);
+  let lt = lightType;
+  if (o.pin) {
+    Object.assign(p, o.pin.p);
+    Object.assign(colors, o.pin.colors);
+    noiseSeed = o.pin.noiseSeed;
+    name = o.pin.name;
+    lt = o.pin.lightType;
+  }
+  const hs = HAIR_STYLES[p.hairStyle];
+  p.fringe = hs.fringe;
+  p.sideIn = hs.sideIn || 0.84;
+  p.sideLen = hs.side ? hs.side(p.hairLen) : 0;
+  p.back = hs.back || 0;
+  p.extra = hs.extra || 0;
+  if (p.female || p.mask) p.beard = 0;
+  if (p.hairStyle === 0) { p.ornament = 0; p.ahoge = 0; }
+  if (!p.hetero) colors.eye2 = colors.eye;
 
-  const Q = new Float32Array(36);
+  const g = F ? 1 : 0;
+  const traits = [LABELS.age[age][g], hs.name];
+  if (HATS[p.hat]) traits.push(HATS[p.hat]);
+  traits.push(LABELS.outfit[p.outfit]);
+  for (const k of ['prop', 'ornament', 'glasses', 'pattern', 'horns', 'mark']) if (LABELS[k][p[k]]) traits.push(LABELS[k][p[k]]);
+  if (p.eyeShape) traits.push(LABELS.eyeShape[p.eyeShape]);
+  if (LABELS.pupil[p.pupil]) traits.push(LABELS.pupil[p.pupil]);
+  const flags = [['scales', 'Escamas'], ['amulet', 'Amuleto'], ['earrings', 'Pendientes'], ['beard', 'Barba'], ['mask', 'Máscara ninja'],
+    ['scarf', 'Bufanda'], ['eyepatch', 'Parche'], ['ahoge', 'Ahoge'], ['fang', 'Colmillo'], ['mole', 'Lunar'], ['freckles', 'Pecas'],
+    ['scar', 'Cicatriz'], ['hetero', 'Heterocromía'], ['glowEyes', 'Ojos brillantes'], ['fur', 'Cuello de piel']];
+  for (const [k, label] of flags) if (p[k]) traits.push(label);
+  traits.push('Luz: ' + { fire: 'hoguera', moon: 'luna', arcane: 'arcana' }[lt]);
+
+  const Q = new Float32Array(52);
   PARAMS.forEach((k, i) => { Q[i] = p[k]; });
 
-  return {
-    name,
-    title: `${LABELS.cls[cls][g]} · ${LABELS.race[race][g]}`,
-    traits, Q, noiseSeed, colors,
-  };
+  return { name, title: `${LABELS.cls[cls][g]} · ${LABELS.race[race][g]}`, traits, Q, noiseSeed, colors };
 }
+
+// The first pink-mage variant, frozen so later generator changes keep it identical.
+const SAKURA_PIN = {
+  name: 'Rolena', lightType: 'moon', noiseSeed: 9.986,
+  p: {
+    headW: 1.00291, headH: 0.98175, jaw: 0.31121, eyeSep: 0.05319, eyeSize: 1.03281, hairStyle: 4, hairLen: 0.5637, beard: 0,
+    scar: 0, mark: 0, lightAng: 2.39642, browTilt: 0.00511, mouthW: 0.03351, ear: 0, glowEyes: 0, part: -0.27927,
+    mouthCurve: 0.10387, hairVol: 1.03177, female: 1, age: 0.09203, race: 0, outfit: 0, hat: 2, prop: 1,
+    amulet: 1, earrings: 1, nose: 0.93221, bodyW: 0.9, horns: 0, freckles: 0, hatTilt: -0.84546, propSide: -1,
+    fur: 0, ahoge: 0, ornament: 0, eyeShape: 0, pupil: 0, eyepatch: 0, glasses: 0, mask: 0, scarf: 0, scales: 0,
+    fang: 0, mole: 0, pattern: 0, hetero: 0,
+  },
+  colors: {
+    skin: [0.768, 0.5843, 0.4383], hair: [1, 0.48, 0.68], cloth: [0.16, 0.3, 0.68], trim: [0.88, 0.8, 0.62],
+    hat: [0.46, 0.2, 0.6], bg: [0.2232, 0.1621, 0.2479], eye: [0.25, 0.45, 0.7], light: [0.55, 0.72, 1],
+    paint: [0.6, 0.12, 0.08], metal: [0.32, 0.32, 0.36], leather: [0.3481, 0.2332, 0.1365], magic: [1, 0.45, 0.7],
+    lip: [0.7512, 0.3708, 0.3381], horn: [0.3, 0.26, 0.22], fur: [0.2499, 0.2066, 0.1765],
+  },
+};
 
 const PRESETS = {
   'maga-rosa': {
@@ -1134,15 +1812,22 @@ const PRESETS = {
     base: { sex: 'f', age: 'young', cls: 'mage', race: 'human' },
     set: { hairStyle: 4, hat: 2, beard: 0 },
     colors: { hair: [1.0, 0.48, 0.68], cloth: [0.16, 0.3, 0.68], hat: [0.46, 0.2, 0.6], trim: [0.88, 0.8, 0.62] },
-    variants: [['sakura', 'human'], ['hana', 'human'], ['yume', 'elf'], ['tsuki', 'duende']],
+    variants: [
+      { seed: 'sakura', race: 'human', pin: SAKURA_PIN },
+      { seed: 'hana', race: 'human' },
+      { seed: 'yume', race: 'elf' },
+      { seed: 'tsuki', race: 'dragon' },
+    ],
   },
 };
+const DRAGON_SEEDS = ['ryu', 'kaen', 'hisui', 'shiro', 'kuro', 'tatsu'];
 
 const glc = document.createElement('canvas');
 glc.width = W; glc.height = H;
 const gl = glc.getContext('webgl', { preserveDrawingBuffer: true });
 let prog;
 const uloc = {};
+const uName = k => 'u' + k[0].toUpperCase() + k.slice(1);
 
 function initGL() {
   if (!gl) throw new Error('WebGL no está disponible en este navegador.');
@@ -1166,9 +1851,7 @@ function initGL() {
   gl.enableVertexAttribArray(loc);
   gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
   gl.viewport(0, 0, W, H);
-  for (const n of ['uRes', 'uSeed', 'uQ', 'uSkin', 'uSkin2', 'uHair', 'uCloth', 'uTrim', 'uHat', 'uBg', 'uEye', 'uLight', 'uPaint', 'uMetal', 'uLeather', 'uMagic', 'uLip', 'uHorn', 'uFur']) {
-    uloc[n] = gl.getUniformLocation(prog, n);
-  }
+  for (const n of ['uRes', 'uSeed', 'uQ', ...COLOR_KEYS.map(uName)]) uloc[n] = gl.getUniformLocation(prog, n);
 }
 
 function renderTo(canvas, seed, overrides) {
@@ -1176,7 +1859,7 @@ function renderTo(canvas, seed, overrides) {
   gl.uniform2f(uloc.uRes, W, H);
   gl.uniform1f(uloc.uSeed, ch.noiseSeed);
   gl.uniform4fv(uloc.uQ, ch.Q);
-  for (const [k, v] of Object.entries(ch.colors)) gl.uniform3fv(uloc['u' + k[0].toUpperCase() + k.slice(1)], v);
+  for (const k of COLOR_KEYS) gl.uniform3fv(uloc[uName(k)], ch.colors[k]);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   canvas.getContext('2d').drawImage(glc, 0, 0, canvas.width, canvas.height);
   return ch;
@@ -1184,22 +1867,37 @@ function renderTo(canvas, seed, overrides) {
 
 const $ = id => document.getElementById(id);
 const randomSeed = () => Math.random().toString(36).slice(2, 8);
-const SELECTS = { race: 'selRace', sex: 'selSex', age: 'selAge', cls: 'selCls' };
+const SELECTS = { race: 'selRace', sex: 'selSex', age: 'selAge', cls: 'selCls', hair: 'selHair', hat: 'selHat' };
 let activePreset = null;
 
+HAIR_STYLES.forEach((s, i) => $('selHair').add(new Option(s.name, i)));
+HATS.forEach((s, i) => $('selHat').add(new Option(s || 'Sin sombrero', i)));
+
 function selectOverrides() {
-  const o = {};
-  for (const [k, id] of Object.entries(SELECTS)) if ($(id).value) o[k] = $(id).value;
-  if (activePreset) {
-    const pr = PRESETS[activePreset.name];
-    return { ...pr.base, race: activePreset.race, ...o, set: pr.set, colors: pr.colors };
-  }
+  const o = {}, set = {};
+  for (const k of ['race', 'sex', 'age', 'cls']) if ($(SELECTS[k]).value) o[k] = $(SELECTS[k]).value;
+  if ($('selHair').value !== '') set.hairStyle = +$('selHair').value;
+  if ($('selHat').value !== '') set.hat = +$('selHat').value;
+  o.set = set;
   return o;
+}
+
+function presetOverrides(name, variant, extra = { set: {} }) {
+  const pr = PRESETS[name];
+  const o = { ...pr.base, race: variant.race, ...extra, set: { ...pr.set, ...extra.set }, colors: pr.colors };
+  const untouched = !Object.keys(extra).some(k => k !== 'set') && !Object.keys(extra.set).length;
+  if (variant.pin && untouched) o.pin = variant.pin;
+  return o;
+}
+
+function currentOverrides() {
+  const o = selectOverrides();
+  return activePreset ? presetOverrides(activePreset.name, activePreset.variant, o) : o;
 }
 
 function show(seed) {
   $('seed').value = seed;
-  const ch = renderTo($('big'), seed, selectOverrides());
+  const ch = renderTo($('big'), seed, currentOverrides());
   $('name').textContent = ch.name;
   $('race').textContent = ch.title;
   $('traits').innerHTML = '';
@@ -1211,8 +1909,8 @@ function show(seed) {
   $('presetTag').style.display = activePreset ? 'block' : 'none';
   if (activePreset) $('presetName').textContent = PRESETS[activePreset.name].label;
   const hp = new URLSearchParams({ seed });
-  for (const [k, id] of Object.entries(SELECTS)) if ($(id).value) hp.set(k, $(id).value);
-  if (activePreset) { hp.set('preset', activePreset.name); hp.set('presetRace', activePreset.race); }
+  for (const [k, id] of Object.entries(SELECTS)) if ($(id).value !== '') hp.set(k, $(id).value);
+  if (activePreset) { hp.set('preset', activePreset.name); hp.set('variant', activePreset.variant.seed); }
   history.replaceState(null, '', '#' + hp.toString());
 }
 
@@ -1231,26 +1929,32 @@ function thumb(container, seed, overrides, onClick) {
   label.textContent = `${seed} · ${ch.title}`;
 }
 
-function usePreset(name, seed, race) {
-  activePreset = { name, race };
-  for (const id of Object.values(SELECTS)) $(id).value = '';
-  show(seed);
+function clearSelects() { for (const id of Object.values(SELECTS)) $(id).value = ''; }
+
+function usePreset(name, variant) {
+  activePreset = { name, variant };
+  clearSelects();
+  show(variant.seed);
 }
 
 function fillPresetGallery() {
   const g = $('presetGallery');
   g.innerHTML = '';
-  const pr = PRESETS['maga-rosa'];
-  for (const [seed, race] of pr.variants) {
-    thumb(g, seed, { ...pr.base, race, set: pr.set, colors: pr.colors }, () => usePreset('maga-rosa', seed, race));
+  for (const v of PRESETS['maga-rosa'].variants) thumb(g, v.seed, presetOverrides('maga-rosa', v), () => usePreset('maga-rosa', v));
+}
+
+function fillDragonGallery() {
+  const g = $('dragonGallery');
+  g.innerHTML = '';
+  for (const seed of DRAGON_SEEDS) {
+    thumb(g, seed, { race: 'dragon', set: {} }, () => { activePreset = null; clearSelects(); $('selRace').value = 'dragon'; show(seed); });
   }
 }
 
 function fillGallery() {
   const g = $('gallery');
   g.innerHTML = '';
-  const o = {};
-  for (const [k, id] of Object.entries(SELECTS)) if ($(id).value) o[k] = $(id).value;
+  const o = selectOverrides();
   for (let i = 0; i < 12; i++) {
     const seed = randomSeed();
     thumb(g, seed, o, () => { activePreset = null; show(seed); });
@@ -1260,14 +1964,17 @@ function fillGallery() {
 try {
   initGL();
   const hp = new URLSearchParams(location.hash.slice(1));
-  for (const [k, id] of Object.entries(SELECTS)) if (hp.get(k)) $(id).value = hp.get(k);
+  for (const [k, id] of Object.entries(SELECTS)) if (hp.get(k) !== null) $(id).value = hp.get(k);
+  const pr = PRESETS[hp.get('preset')];
   if (hp.get('seed')) {
-    activePreset = PRESETS[hp.get('preset')] ? { name: hp.get('preset'), race: hp.get('presetRace') || 'human' } : null;
+    const variant = pr && pr.variants.find(v => v.seed === hp.get('variant'));
+    activePreset = variant ? { name: hp.get('preset'), variant } : null;
     show(hp.get('seed'));
   } else {
-    usePreset('maga-rosa', 'sakura', 'human');
+    usePreset('maga-rosa', PRESETS['maga-rosa'].variants[0]);
   }
   fillPresetGallery();
+  fillDragonGallery();
   fillGallery();
 } catch (e) {
   $('name').innerHTML = '<span class="err">Error</span>';
@@ -1277,7 +1984,7 @@ try {
 
 $('go').onclick = () => show($('seed').value.trim() || randomSeed());
 $('seed').onkeydown = e => { if (e.key === 'Enter') $('go').click(); };
-$('rand').onclick = () => show(randomSeed());
+$('rand').onclick = () => { activePreset = null; show(randomSeed()); };
 $('more').onclick = fillGallery;
 $('clearPreset').onclick = () => { activePreset = null; show($('seed').value); };
 for (const id of Object.values(SELECTS)) $(id).onchange = () => { show($('seed').value); fillGallery(); };
