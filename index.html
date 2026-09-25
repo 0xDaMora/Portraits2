@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Retratos — prueba de estilo</title>
+<style>
+  :root {
+    --bg: #14110f;
+    --panel: #1e1a17;
+    --ink: #e8dcc8;
+    --muted: #a3927a;
+    --accent: #d08a3c;
+    --frame: #5a4632;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: radial-gradient(ellipse at top, #231d18, var(--bg) 70%);
+    color: var(--ink);
+    font-family: Georgia, "Times New Roman", serif;
+    min-height: 100vh;
+  }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-weight: normal; letter-spacing: 0.08em; margin: 0 0 4px; font-size: 1.6rem; }
+  .sub { color: var(--muted); margin: 0 0 24px; font-style: italic; }
+  .hero { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; }
+  .frame {
+    padding: 10px;
+    background: linear-gradient(135deg, #6b543b, #3a2c1f 40%, #6b543b 60%, #2e2318);
+    border-radius: 4px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(255,220,170,0.15);
+  }
+  .frame canvas { display: block; width: 100%; height: auto; border: 1px solid #000; }
+  #main { width: min(400px, 100%); }
+  .side { flex: 1; min-width: 260px; }
+  .name { font-size: 1.8rem; margin: 0 0 4px; letter-spacing: 0.04em; }
+  .race { color: var(--accent); margin: 0 0 16px; text-transform: uppercase; letter-spacing: 0.15em; font-size: 0.8rem; }
+  label { display: block; color: var(--muted); font-size: 0.85rem; margin-bottom: 6px; }
+  .row { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  input {
+    flex: 1; min-width: 140px;
+    background: var(--panel); color: var(--ink);
+    border: 1px solid var(--frame); border-radius: 3px;
+    padding: 8px 10px; font: inherit;
+  }
+  button {
+    background: #3a2c1f; color: var(--ink);
+    border: 1px solid var(--frame); border-radius: 3px;
+    padding: 8px 14px; font: inherit; cursor: pointer;
+  }
+  button:hover { background: #4a3827; border-color: var(--accent); }
+  ul.traits { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+  ul.traits li { background: var(--panel); border: 1px solid var(--frame); border-radius: 999px; padding: 4px 10px; font-size: 0.85rem; }
+  h2 { font-weight: normal; letter-spacing: 0.08em; margin: 40px 0 12px; font-size: 1.1rem; color: var(--muted); }
+  .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 14px; }
+  .thumb { cursor: pointer; padding: 5px; transition: transform 0.15s; }
+  .thumb:hover { transform: translateY(-3px); }
+  .thumb .seed { font-size: 0.72rem; color: var(--muted); text-align: center; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .err { color: #ff8a7a; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Retratos procedurales</h1>
+  <p class="sub">Prueba de estilo — misma semilla, mismo personaje. Todo se dibuja con un shader de ruido, sin imágenes.</p>
+
+  <div class="hero">
+    <div class="frame" id="main"><canvas id="big" width="512" height="640"></canvas></div>
+    <div class="side">
+      <p class="name" id="name">—</p>
+      <p class="race" id="race"></p>
+      <label for="seed">Semilla</label>
+      <div class="row">
+        <input id="seed" autocomplete="off">
+        <button id="go">Generar</button>
+        <button id="rand">Aleatorio</button>
+        <button id="dl">PNG</button>
+      </div>
+      <ul class="traits" id="traits"></ul>
+    </div>
+  </div>
+
+  <h2>Otras semillas <button id="more" style="margin-left:8px;font-size:0.8rem;padding:4px 10px">Más</button></h2>
+  <div class="gallery" id="gallery"></div>
+</main>
+
+<script id="fs" type="x-shader/x-fragment">
+precision highp float;
+uniform vec2 uRes;
+uniform float uSeed;
+uniform vec3 uSkin, uHair, uCloth, uBg, uEye, uLight, uPaint, uMetal, uFur;
+uniform float uP[20];
+
+vec2 hash2(vec2 p) {
+  p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+  return -1.0 + 2.0 * fract(sin(p) * 43758.5453);
+}
+float hash1(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+float noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(dot(hash2(i), f), dot(hash2(i + vec2(1.0, 0.0)), f - vec2(1.0, 0.0)), u.x),
+             mix(dot(hash2(i + vec2(0.0, 1.0)), f - vec2(0.0, 1.0)), dot(hash2(i + vec2(1.0, 1.0)), f - vec2(1.0, 1.0)), u.x), u.y);
+}
+float fbm(vec2 p) {
+  float v = 0.0, a = 0.5;
+  mat2 m = mat2(1.6, 1.2, -1.2, 1.6);
+  for (int i = 0; i < 5; i++) { v += a * noise(p); p = m * p; a *= 0.5; }
+  return v;
+}
+float sdE(vec2 p, vec2 r) {
+  float k0 = length(p / r);
+  float k1 = length(p / (r * r));
+  return k0 * (k0 - 1.0) / max(k1, 1e-5);
+}
+float sdTaper(vec2 p, vec2 a, vec2 b, float ra, float rb) {
+  vec2 pa = p - a, ba = b - a;
+  float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+  return length(pa - ba * h) - mix(ra, rb, h);
+}
+float fill(float d, float s) { return smoothstep(s, -s, d); }
+vec3 ellN(vec2 q, vec2 r) {
+  vec2 k = q / r;
+  float z = sqrt(max(0.0, 1.0 - dot(k, k)));
+  return normalize(vec3(k * 0.85, z + 0.2));
+}
+
+// Semi-posterized wrap lighting: warm lights, cool shadows, brushy band edges.
+vec3 shade(vec3 base, vec3 n, vec3 L, float jit) {
+  float d = clamp(dot(n, L), -1.0, 1.0) * 0.5 + 0.5;
+  float bands = floor(d * 4.0 + jit) / 4.0;
+  d = mix(d, bands, 0.55);
+  vec3 shadow = base * vec3(0.30, 0.29, 0.42) + uBg * 0.07;
+  vec3 lit = base * 1.06 + uLight * base * 0.4;
+  return mix(shadow, lit, smoothstep(0.0, 1.0, d));
+}
+
+void main() {
+  vec2 p = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y * 0.84;
+  vec2 so = vec2(uSeed * 1.37, uSeed * 2.91);
+
+  vec2 w = vec2(fbm(p * 7.0 + so), fbm(p * 7.0 + so + 5.2));
+  vec2 q = p + w * 0.014;
+  float ang = fbm(p * 2.2 + so) * 3.14;
+  mat2 R = mat2(cos(ang), -sin(ang), sin(ang), cos(ang));
+  float stroke = noise((R * p) * vec2(110.0, 10.0) + so);
+  float jit = 0.5 + 0.6 * fbm(p * 14.0 + so * 1.3) + 0.25 * stroke;
+
+  float la = uP[10];
+  vec3 L = normalize(vec3(cos(la), sin(la), 0.75));
+  float soft = 0.0022;
+
+  // ---- background
+  vec2 bw = p * 2.4 + so;
+  float b1 = fbm(bw + 1.6 * vec2(fbm(bw), fbm(bw + vec2(5.2, 1.3))));
+  vec3 col = mix(uBg * 0.18, uBg * 0.95, smoothstep(-0.35, 0.55, b1));
+  col += uLight * 0.4 * exp(-3.2 * length(p - L.xy * 0.3 - vec2(0.0, 0.05)));
+  col *= 0.94 + 0.12 * stroke;
+
+  float hw = uP[0], hh = uP[1];
+  vec2 hc = vec2(0.0, 0.05);
+  vec2 hr = vec2(0.128 * hw, 0.172 * hh);
+  vec2 fq = q - hc;
+  vec2 hq = fq;
+  hq.x /= 1.0 - uP[2] * smoothstep(0.0, -0.18, hq.y);
+  float dHead = sdE(hq, hr);
+  bool hood = uP[5] > 0.5;
+  float hairLen = uP[6];
+
+  vec2 hoodR = hr * vec2(1.6, 1.33);
+  float dHoodOuter = min(sdE(fq - vec2(0.0, 0.015), hoodR),
+                         sdE(fq - vec2(0.0, -0.12), vec2(hr.x * 1.75, 0.2)));
+  dHoodOuter += 0.006 * fbm(q * 12.0 + so);
+
+  // ---- hood back / long hair back
+  if (hood) {
+    vec3 c = shade(uCloth * 0.8, ellN(fq - vec2(0.0, 0.015), hoodR), L, jit);
+    col = mix(col, c * 0.7, fill(dHoodOuter, soft));
+  } else if (hairLen > 0.05) {
+    vec2 c0 = hc + vec2(0.0, -0.07 * hairLen);
+    vec2 rr = vec2(hr.x * 1.3 * uP[19], hr.y * 1.08 + 0.14 * hairLen);
+    float d = sdE(q - c0, rr) + 0.012 * fbm(q * vec2(40.0, 5.0) + so);
+    vec2 fl = vec2(q.x * 50.0 + fbm(q * 5.0 + so) * 4.0, q.y * 4.0);
+    float strand = 0.6 * noise(fl + so) + 0.4 * noise(fl * vec2(3.0, 2.0) + so);
+    vec3 c = shade(uHair * (0.75 + 0.5 * strand), ellN(q - c0, rr), L, jit) * 0.7;
+    col = mix(col, c, fill(d, soft));
+  }
+
+  // ---- neck
+  {
+    vec2 nc = vec2(0.0, hc.y - 0.19);
+    float d = sdE(q - nc, vec2(0.06 * hw, 0.15));
+    vec3 n = normalize(vec3((q.x / (0.06 * hw)) * 0.9, -0.2, 0.8));
+    vec3 c = shade(uSkin * 0.85, n, L, jit);
+    c *= mix(0.9, 0.35, smoothstep(hc.y - 0.24, hc.y - 0.12, q.y));
+    col = mix(col, c, fill(d, soft));
+  }
+
+  // ---- body / cloak
+  vec2 bc = vec2(0.0, -0.53);
+  vec2 br = vec2(0.46, 0.31);
+  float dBody = sdE(q - bc, br);
+  {
+    float folds = sin(q.x * 38.0 + fbm(q * 4.0 + so) * 7.0);
+    vec3 c = shade(uCloth, ellN(q - bc, br), L, jit + 0.2 * folds);
+    c *= (0.9 + 0.1 * folds) * mix(0.55, 1.0, smoothstep(-0.62, -0.3, q.y));
+    c *= 0.92 + 0.16 * fbm(q * 9.0 + so);
+    col = mix(col, c, fill(dBody, soft));
+
+    if (uP[14] > 0.5) {
+      float ra = atan(q.x - bc.x, q.y - bc.y);
+      vec2 fw = vec2(ra * 30.0 + fbm(q * 8.0 + so) * 3.0, length(q - bc) * 10.0);
+      float fs = 0.6 * noise(fw + so) + 0.4 * noise(fw * vec2(2.5, 1.5) + so);
+      float d = abs(dBody + 0.025) - 0.05 + 0.035 * fbm(q * 18.0 + so) + 0.015 * fs;
+      d = max(d, -0.36 - q.y + 0.03 * fbm(q * 20.0 + so));
+      vec3 fc = shade(uFur * (0.75 + 0.45 * fs), ellN(q - bc, br * 1.05), L, jit);
+      col = mix(col, fc, fill(d, 0.004));
+    } else {
+      vec2 sd = normalize(vec2(1.0, 1.25));
+      float d = abs(dot(q - vec2(0.0, -0.45), vec2(sd.y, -sd.x))) - 0.022;
+      d = max(d, dBody + 0.01);
+      vec3 leather = vec3(0.30, 0.18, 0.10);
+      vec3 c2 = shade(leather, vec3(0.0, 0.3, 1.0), L, jit) * (0.85 + 0.2 * stroke);
+      col = mix(col, c2, fill(d, soft));
+      vec2 bp = vec2(-0.075, -0.36);
+      float db = abs(sdE(q - bp, vec2(0.022, 0.028))) - 0.005;
+      col = mix(col, shade(uMetal, vec3(-0.3, 0.4, 0.9), L, jit) * 1.15, fill(db, 0.0015));
+    }
+    float dc = length(q - vec2(0.0, -0.29)) - 0.02;
+    vec3 mc = shade(uMetal, normalize(vec3((q - vec2(0.0, -0.29)) / 0.02, 0.6)), L, jit);
+    col = mix(col, mc * 1.1, fill(dc, 0.0015));
+  }
+
+  // ---- ears
+  if (!hood) {
+    for (int i = 0; i < 2; i++) {
+      float sx = i == 0 ? -1.0 : 1.0;
+      vec2 ep = hc + vec2(sx * hr.x * 0.93, 0.0);
+      float d, di;
+      if (uP[13] > 0.5) {
+        d = sdTaper(q, ep, ep + vec2(sx * 0.1, 0.085), 0.022, 0.002);
+        di = sdTaper(q, ep + vec2(sx * 0.01, 0.0), ep + vec2(sx * 0.08, 0.066), 0.011, 0.001);
+      } else {
+        d = sdE(q - ep - vec2(sx * 0.01, -0.005), vec2(0.022, 0.036));
+        di = sdE(q - ep - vec2(sx * 0.012, -0.005), vec2(0.011, 0.022));
+      }
+      vec3 c = shade(uSkin, normalize(vec3(sx * 0.6, 0.2, 0.8)), L, jit);
+      c = mix(c, c * vec3(0.6, 0.45, 0.45), fill(di, 0.004) * 0.7);
+      col = mix(col, c, fill(d, soft));
+    }
+  }
+
+  // ---- head
+  float es = uP[3], esz = uP[4];
+  {
+    vec3 n = ellN(hq, hr);
+    float noseMask = exp(-pow(fq.x / 0.017, 2.0)) * smoothstep(0.03, -0.01, fq.y) * smoothstep(-0.085, -0.05, fq.y);
+    n = normalize(n + vec3(fq.x / 0.017, 0.0, 0.0) * noseMask * 0.7);
+    float cheek = 0.0;
+    for (int i = 0; i < 2; i++) {
+      float sx = i == 0 ? -1.0 : 1.0;
+      vec2 cd = fq - vec2(sx * 0.07, -0.03);
+      cheek += exp(-dot(cd, cd) / 0.0016);
+    }
+    n = normalize(n + vec3(0.0, 0.25, 0.0) * cheek);
+    vec3 c = shade(uSkin, n, L, jit);
+    float sv = fbm(fq * 22.0 + so);
+    c *= mix(vec3(0.94, 0.97, 1.0), vec3(1.06, 0.97, 0.94), 0.5 + sv);
+
+    for (int i = 0; i < 2; i++) {
+      float sx = i == 0 ? -1.0 : 1.0;
+      vec2 cd = fq - vec2(sx * 0.066, -0.055);
+      c = mix(c, c * vec3(1.12, 0.82, 0.8), 0.3 * exp(-dot(cd, cd) / 0.0014));
+      vec2 sdv = (fq - vec2(sx * es, 0.004)) * vec2(0.75, 1.4);
+      c *= 1.0 - 0.4 * exp(-dot(sdv, sdv) / 0.0011);
+    }
+
+    // war paint
+    float pm = 0.0;
+    if (uP[9] > 0.5 && uP[9] < 1.5) {
+      pm = fill(abs(fq.y - 0.003) - 0.021 + 0.008 * fbm(fq * 50.0 + so), 0.002);
+    } else if (uP[9] > 1.5 && uP[9] < 2.5) {
+      for (int i = 0; i < 3; i++) {
+        float fi = float(i);
+        float d = sdTaper(fq, vec2(0.035 + fi * 0.017, -0.015), vec2(0.06 + fi * 0.017, -0.095), 0.005, 0.0015);
+        pm = max(pm, fill(d + 0.002 * noise(fq * 200.0), 0.0015));
+      }
+    } else if (uP[9] > 2.5) {
+      float d = sdTaper(fq, vec2(-es, 0.075), vec2(-es + 0.01, -0.12), 0.007, 0.004);
+      pm = fill(d + 0.004 * fbm(fq * 60.0 + so), 0.0015);
+    }
+    c = mix(c, uPaint * (0.75 + 0.35 * stroke) * mix(0.6, 1.1, dot(n, L) * 0.5 + 0.5), pm * 0.85);
+
+    // nose
+    vec2 nt = fq - vec2(0.0, -0.062);
+    c *= 1.0 - 0.35 * fill(sdE(nt - vec2(0.0, -0.013), vec2(0.021, 0.0055)), 0.004);
+    for (int i = 0; i < 2; i++) {
+      float sx = i == 0 ? -1.0 : 1.0;
+      c *= 1.0 - 0.45 * fill(sdE(nt - vec2(sx * 0.0095, -0.008), vec2(0.0045, 0.0025)), 0.0015);
+    }
+    c += uLight * 0.1 * exp(-dot(nt - L.xy * 0.006, nt - L.xy * 0.006) / 0.00006);
+
+    // mouth
+    float mw = uP[12];
+    vec2 m = fq - vec2(0.0, -0.108);
+    m.y += m.x * m.x * uP[18];
+    float mxMask = smoothstep(mw, mw * 0.5, abs(m.x));
+    c = mix(c, c * vec3(1.05, 0.8, 0.8), fill(sdE(m - vec2(0.0, -0.008), vec2(mw * 0.75, 0.0065)), 0.002) * 0.45);
+    c *= 1.0 - 0.2 * fill(sdE(m - vec2(0.0, 0.004), vec2(mw * 0.8, 0.004)), 0.002);
+    c = mix(c, uSkin * vec3(0.25, 0.16, 0.16), fill(abs(m.y) - 0.0017, 0.0012) * mxMask);
+    vec2 ch = fq - vec2(0.0, -0.14);
+    c *= 1.0 - 0.12 * exp(-dot(ch, ch) / 0.0005);
+
+    // eyes
+    for (int i = 0; i < 2; i++) {
+      float sx = i == 0 ? -1.0 : 1.0;
+      vec2 e = vec2(sx * es, 0.0);
+      vec2 d = fq - e;
+      vec2 ed = d;
+      ed.y -= sx * ed.x * 0.12;
+      float dEye = sdE(ed, vec2(0.025, 0.0105) * esz);
+      vec3 sclera = mix(uSkin * 0.5, vec3(0.86, 0.82, 0.76), 0.7) * 0.85;
+      float ir = 0.0105 * esz;
+      float di = length(d) - ir;
+      vec3 iris = uEye * (0.45 + 0.9 * smoothstep(ir, 0.0, length(d - vec2(0.0, -0.004))));
+      iris *= mix(0.45, 1.0, smoothstep(0.0, -0.003, di));
+      vec3 ec = mix(sclera, iris, fill(di, 0.001));
+      ec = mix(ec, vec3(0.02), fill(length(d) - 0.0042 * esz, 0.0008));
+      ec *= mix(1.0, 0.5, smoothstep(-0.004, 0.008, ed.y));
+      ec = mix(ec, vec3(1.0), fill(length(d - vec2(-0.004, 0.004)) - 0.0022, 0.0008) * 0.85);
+      c = mix(c, ec, fill(dEye, 0.0015));
+      float lid = fill(abs(dEye) - 0.0013, 0.001) * smoothstep(-0.004, 0.0, ed.y);
+      c = mix(c, uSkin * 0.12, lid * 0.9);
+
+      float tilt = uP[11];
+      vec2 bIn = e + vec2(-sx * 0.026, 0.021 - tilt);
+      vec2 bOut = e + vec2(sx * 0.03, 0.027 + tilt * 0.3);
+      float dB = sdTaper(fq, bIn, bOut, 0.0055, 0.0025) + 0.002 * noise(fq * 300.0);
+      c = mix(c, uHair * 0.7 * (0.8 + 0.3 * noise(fq * vec2(400.0, 60.0))), fill(dB, 0.0015) * 0.9);
+    }
+
+    // scar
+    if (uP[8] > 0.5) {
+      float dS = sdTaper(fq, vec2(-es - 0.02, 0.05), vec2(-es + 0.025, -0.07), 0.0035, 0.0015);
+      c *= 1.0 - 0.3 * fill(abs(dS) - 0.001, 0.001);
+      c = mix(c, c * vec3(1.25, 0.92, 0.92) + 0.04, fill(dS, 0.0012));
+    }
+
+    // tusks
+    if (uP[16] > 0.5) {
+      for (int i = 0; i < 2; i++) {
+        float sx = i == 0 ? -1.0 : 1.0;
+        float d = sdTaper(fq, vec2(sx * 0.024, -0.118), vec2(sx * 0.03, -0.083), 0.0065, 0.0008);
+        vec3 tc = shade(vec3(0.9, 0.85, 0.7), normalize(vec3(sx * 0.3, 0.2, 1.0)), L, jit);
+        c = mix(c, tc, fill(d, 0.0012));
+      }
+    }
+
+    // rim light from the key light
+    c += uLight * 0.3 * smoothstep(-0.02, 0.0, dHead) * max(0.0, dot(normalize(hq / hr), L.xy));
+
+    col = mix(col, c, fill(dHead, soft));
+  }
+
+  // ---- beard
+  if (uP[7] > 0.05) {
+    float bl = uP[7];
+    float dBd = sdE(fq - vec2(0.0, -0.12 - 0.03 * bl), vec2(hr.x * 0.95, 0.075 + 0.07 * bl));
+    dBd = max(dBd, fq.y + 0.072);
+    float side = max(max(dHead - 0.004, hr.x * 0.74 - abs(fq.x)), fq.y - 0.02);
+    dBd = min(dBd, side);
+    for (int i = 0; i < 2; i++) {
+      float sx = i == 0 ? -1.0 : 1.0;
+      dBd = min(dBd, sdTaper(fq, vec2(sx * 0.004, -0.086), vec2(sx * 0.042, -0.108), 0.009, 0.003));
+    }
+    dBd = max(dBd, -sdE(fq - vec2(0.0, -0.113), vec2(uP[12] * 0.85, 0.0085)));
+    dBd += 0.008 * fbm(fq * vec2(50.0, 12.0) + so);
+    float strand = noise(vec2(fq.x * 160.0, fq.y * 14.0) + so);
+    vec3 c = shade(uHair * (0.75 + 0.4 * strand), ellN(fq - vec2(0.0, -0.1), vec2(hr.x, 0.15)), L, jit);
+    col = mix(col, c, fill(dBd, 0.003));
+  }
+
+  // ---- hair on top
+  if (!hood && hairLen > -0.5) {
+    vec2 cc = hc + vec2(0.0, 0.02);
+    vec2 cr = hr * vec2(1.1 * uP[19], 1.04 * uP[19]);
+    vec2 hq2 = q - cc;
+    float dCap = sdE(hq2, cr);
+    float fringe = hc.y + hr.y * 0.56 + uP[17] * 0.18 * fq.x + 0.03 * fbm(q * vec2(30.0, 4.0) + so)
+                 + 0.012 * sin(q.x * 70.0 + uSeed);
+    float dTop = max(dCap, fringe - q.y);
+    float sides = max(dCap, hr.x * 0.84 - abs(fq.x));
+    sides = max(sides, -0.03 - 0.12 * max(hairLen, 0.0) - fq.y);
+    float dHair = min(dTop, sides) + 0.004 * noise(q * 90.0);
+
+    col *= 1.0 - 0.35 * fill(dTop - 0.014, 0.01) * fill(dHead, soft);
+
+    float a = atan(fq.x, fq.y - 0.05);
+    vec2 fl = vec2(a * 12.0 + fbm(q * 6.0 + so) * 2.5, length(fq) * 5.0);
+    float strand = 0.55 * noise(fl + so) + 0.3 * noise(fl * vec2(4.0, 2.0) + so) + 0.15 * noise(fl * 9.0);
+    vec3 n = ellN(hq2, cr);
+    n = normalize(n + vec3(0.35 * strand, 0.2 * strand, 0.0));
+    vec3 c = shade(uHair * (0.7 + 0.55 * strand), n, L, jit + 0.3 * strand);
+    c += uLight * 0.2 * pow(max(0.0, dot(n, L)), 6.0) * (0.5 + strand);
+    col = mix(col, c, fill(dHair, 0.0025));
+  }
+
+  // ---- hood front: rim + deep shadow on the face
+  if (hood) {
+    float dOpen = sdE(fq - vec2(0.0, -0.035), hr * vec2(1.06, 1.08)) + 0.006 * fbm(q * 20.0 + so);
+    float inOpen = fill(dOpen, 0.004);
+    float sh = (1.0 - smoothstep(0.0, 0.06, -dOpen)) * 0.55 + smoothstep(-0.06, 0.13, fq.y) * 0.5;
+    col *= 1.0 - clamp(sh, 0.0, 0.85) * inOpen;
+    float fa = atan(fq.x, fq.y);
+    float folds = sin(fa * 14.0 + fbm(q * 6.0 + so) * 4.0);
+    vec3 hn = ellN(fq - vec2(0.0, 0.015), hoodR);
+    vec3 c = shade(uCloth, hn, L, jit + 0.2 * folds) * (0.88 + 0.12 * folds);
+    c += uLight * uCloth * 0.4 * (1.0 - smoothstep(0.0, 0.015, dOpen));
+    col = mix(col, c, fill(dHoodOuter, soft) * (1.0 - inOpen));
+  }
+
+  // ---- glowing eyes
+  if (uP[15] > 0.5) {
+    for (int i = 0; i < 2; i++) {
+      float sx = i == 0 ? -1.0 : 1.0;
+      vec2 d = (fq - vec2(sx * es, 0.0)) * vec2(0.7, 1.4);
+      col += uEye * 0.55 * exp(-length(d) / 0.016);
+      col = mix(col, uEye * 1.4 + 0.25, fill(length(fq - vec2(sx * es, 0.0)) - 0.005, 0.002) * 0.9);
+    }
+  }
+
+  // ---- finishing: contrast, vignette, canvas weave, grain
+  col *= 0.95 + 0.1 * stroke;
+  col += (fbm(p * 45.0 + so) * 0.05) * vec3(1.0, 0.9, 1.1);
+  col = clamp(col, 0.0, 1.0);
+  col = mix(col, col * col * (3.0 - 2.0 * col), 0.3);
+  col *= mix(0.3, 1.0, smoothstep(0.85, 0.2, length(p * vec2(1.1, 0.95))));
+  col *= 1.0 + 0.015 * sin(gl_FragCoord.x * 1.7) * sin(gl_FragCoord.y * 1.7);
+  col += (hash1(gl_FragCoord.xy + uSeed) - 0.5) * 0.035;
+  gl_FragColor = vec4(col, 1.0);
+}
+</script>
+
+<script>
+const W = 512, H = 640;
+
+function xmur3(str) {
+  let h = 1779033703 ^ str.length;
+  for (let i = 0; i < str.length; i++) {
+    h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  return () => {
+    h = Math.imul(h ^ (h >>> 16), 2246822507);
+    h = Math.imul(h ^ (h >>> 13), 3266489909);
+    return (h ^= h >>> 16) >>> 0;
+  };
+}
+function mulberry32(a) {
+  return () => {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function hsl(h, s, l) {
+  h = ((h % 1) + 1) % 1;
+  const f = n => {
+    const k = (n + h * 12) % 12;
+    const a = s * Math.min(l, 1 - l);
+    return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+  };
+  return [f(0), f(8), f(4)];
+}
+
+function genCharacter(seed) {
+  const h = xmur3(String(seed));
+  const rng = mulberry32(h());
+  const noiseSeed = (h() % 10000) / 500;
+  const r = (a, b) => a + (b - a) * rng();
+  const pick = a => a[Math.floor(rng() * a.length)];
+  const chance = p => rng() < p;
+  const jit = (c, a) => c.map(v => Math.min(1, Math.max(0, v + (rng() - 0.5) * a)));
+
+  const rr = rng();
+  const race = rr < 0.55 ? 'human' : rr < 0.75 ? 'elf' : rr < 0.9 ? 'orc' : 'undead';
+
+  const humanSkins = [[0.95,0.80,0.69],[0.89,0.69,0.55],[0.78,0.57,0.43],[0.62,0.43,0.30],[0.45,0.30,0.21],[0.32,0.21,0.15]];
+  const skin = jit({
+    human: () => pick(humanSkins),
+    elf: () => pick([...humanSkins.slice(0, 3), [0.80,0.78,0.86], [0.55,0.52,0.66]]),
+    orc: () => pick([[0.42,0.55,0.32],[0.50,0.56,0.40],[0.36,0.46,0.34],[0.55,0.50,0.42]]),
+    undead: () => pick([[0.66,0.72,0.72],[0.60,0.64,0.70],[0.70,0.70,0.62]]),
+  }[race](), 0.05);
+
+  const hairs = [[0.08,0.06,0.05],[0.22,0.13,0.07],[0.42,0.17,0.07],[0.72,0.56,0.32],[0.72,0.71,0.69]];
+  const hair = jit(race === 'elf' ? pick([...hairs, [0.85,0.87,0.92], [0.12,0.14,0.26]]) : pick(hairs), 0.05);
+
+  const glow = race === 'undead' || chance(0.08);
+  const eye = glow
+    ? pick([[0.3,0.9,1.0],[1.0,0.55,0.15],[0.6,1.0,0.4],[0.8,0.45,1.0]])
+    : pick([[0.35,0.22,0.1],[0.25,0.45,0.25],[0.25,0.45,0.7],[0.6,0.45,0.15],[0.45,0.45,0.45]]);
+
+  const lr = rng();
+  const lightType = lr < 0.5 ? 'fire' : lr < 0.8 ? 'moon' : 'arcane';
+  let light, lightAng;
+  if (lightType === 'fire') {
+    light = [1.0, 0.58, 0.26];
+    lightAng = pick([r(-0.7, -0.2), r(-2.9, -2.4), r(0.3, 0.9), r(2.2, 2.8)]);
+  } else if (lightType === 'moon') {
+    light = [0.55, 0.72, 1.0];
+    lightAng = pick([r(0.6, 1.2), r(1.9, 2.5)]);
+  } else {
+    light = pick([[0.72, 0.45, 1.0], [0.3, 0.95, 0.8]]);
+    lightAng = r(-3.1, 3.1);
+  }
+
+  const bg = hsl(r(0, 1), r(0.2, 0.4), r(0.18, 0.3));
+  const cloth = hsl(pick([0.07, 0.09, 0.25, 0.33, 0.0, 0.6, 0.55]) + r(-0.03, 0.03), r(0.18, 0.45), r(0.18, 0.34));
+  const fur = jit(pick([[0.42,0.33,0.24],[0.55,0.53,0.5],[0.8,0.78,0.74],[0.25,0.2,0.16]]), 0.06);
+  const paint = pick([[0.6,0.12,0.08],[0.15,0.3,0.6],[0.85,0.83,0.78],[0.06,0.05,0.05]]);
+  const metal = pick([[0.85,0.65,0.3],[0.6,0.62,0.65],[0.7,0.45,0.25]]);
+
+  const headW = { human: r(0.92, 1.08), elf: r(0.86, 0.96), orc: r(1.08, 1.2), undead: r(0.88, 1.0) }[race];
+  const jaw = { human: r(0.15, 0.35), elf: r(0.3, 0.42), orc: r(0.02, 0.15), undead: r(0.3, 0.45) }[race];
+  const eyeSize = { human: r(0.85, 1.15), elf: r(1.05, 1.25), orc: r(0.8, 0.95), undead: r(0.9, 1.1) }[race];
+
+  const hood = chance(0.35);
+  const hairLen = chance(0.12) ? -1 : r(0, 1);
+  const beard = race !== 'elf' && chance(0.35) ? r(0.2, 1) : 0;
+  const scar = chance(0.3);
+  const paintType = chance(0.35) ? 1 + Math.floor(rng() * 3) : 0;
+  const furCollar = chance(0.45);
+
+  const P = new Float32Array(20);
+  P[0] = headW; P[1] = r(0.95, 1.07); P[2] = jaw;
+  P[3] = r(0.046, 0.056) * headW; P[4] = eyeSize;
+  P[5] = hood ? 1 : 0; P[6] = hairLen; P[7] = beard; P[8] = scar ? 1 : 0; P[9] = paintType;
+  P[10] = lightAng; P[11] = race === 'orc' ? r(0.004, 0.01) : r(-0.006, 0.008);
+  P[12] = r(0.028, 0.04) * headW; P[13] = race === 'elf' ? 1 : 0;
+  P[14] = furCollar ? 1 : 0; P[15] = glow ? 1 : 0; P[16] = race === 'orc' ? 1 : 0;
+  P[17] = r(-1, 1); P[18] = r(-1, 3); P[19] = r(0.95, 1.1);
+
+  const syl = ['ka','ren','dor','ul','mae','th','ir','gar','vel','sa','bro','nyx','el','rok','ash','wyn','tor','li'];
+  const nm = Array.from({ length: 2 + Math.floor(rng() * 2) }, () => pick(syl)).join('');
+  const name = nm[0].toUpperCase() + nm.slice(1);
+
+  const raceName = { human: 'Humano', elf: 'Elfo', orc: 'Orco', undead: 'No-muerto' }[race];
+  const traits = [];
+  if (hood) traits.push('Capucha');
+  else traits.push(hairLen < 0 ? 'Rapado' : hairLen > 0.6 ? 'Pelo largo' : 'Pelo corto');
+  if (beard) traits.push('Barba');
+  if (scar) traits.push('Cicatriz');
+  if (paintType) traits.push('Pintura de guerra: ' + ['banda', 'garras', 'línea'][paintType - 1]);
+  if (glow) traits.push('Ojos brillantes');
+  traits.push(furCollar ? 'Cuello de piel' : 'Correa de cuero');
+  traits.push('Luz: ' + { fire: 'hoguera', moon: 'luna', arcane: 'arcana' }[lightType]);
+
+  return {
+    name, raceName, traits, P, noiseSeed,
+    colors: { uSkin: skin, uHair: hair, uCloth: cloth, uBg: bg, uEye: eye, uLight: light, uPaint: paint, uMetal: metal, uFur: fur },
+  };
+}
+
+const glc = document.createElement('canvas');
+glc.width = W; glc.height = H;
+const gl = glc.getContext('webgl', { preserveDrawingBuffer: true });
+let prog;
+
+function initGL() {
+  if (!gl) throw new Error('WebGL no está disponible en este navegador.');
+  const compile = (type, src) => {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  };
+  prog = gl.createProgram();
+  gl.attachShader(prog, compile(gl.VERTEX_SHADER, 'attribute vec2 a;void main(){gl_Position=vec4(a,0.0,1.0);}'));
+  gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, document.getElementById('fs').textContent));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  gl.useProgram(prog);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(prog, 'a');
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  gl.viewport(0, 0, W, H);
+}
+
+function renderTo(canvas, seed) {
+  const ch = genCharacter(seed);
+  gl.uniform2f(gl.getUniformLocation(prog, 'uRes'), W, H);
+  gl.uniform1f(gl.getUniformLocation(prog, 'uSeed'), ch.noiseSeed);
+  gl.uniform1fv(gl.getUniformLocation(prog, 'uP'), ch.P);
+  for (const [k, v] of Object.entries(ch.colors)) gl.uniform3fv(gl.getUniformLocation(prog, k), v);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  canvas.getContext('2d').drawImage(glc, 0, 0, canvas.width, canvas.height);
+  return ch;
+}
+
+const $ = id => document.getElementById(id);
+const randomSeed = () => Math.random().toString(36).slice(2, 8);
+
+function show(seed) {
+  $('seed').value = seed;
+  const ch = renderTo($('big'), seed);
+  $('name').textContent = ch.name;
+  $('race').textContent = ch.raceName;
+  $('traits').innerHTML = '';
+  for (const t of ch.traits) {
+    const li = document.createElement('li');
+    li.textContent = t;
+    $('traits').appendChild(li);
+  }
+  history.replaceState(null, '', '#' + encodeURIComponent(seed));
+}
+
+function fillGallery() {
+  const g = $('gallery');
+  g.innerHTML = '';
+  for (let i = 0; i < 12; i++) {
+    const seed = randomSeed();
+    const div = document.createElement('div');
+    div.className = 'frame thumb';
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = 320;
+    div.appendChild(c);
+    const label = document.createElement('div');
+    label.className = 'seed';
+    label.textContent = seed;
+    div.appendChild(label);
+    div.onclick = () => { show(seed); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+    g.appendChild(div);
+    renderTo(c, seed);
+  }
+}
+
+try {
+  initGL();
+  show(decodeURIComponent(location.hash.slice(1)) || 'hoguera');
+  fillGallery();
+} catch (e) {
+  $('name').innerHTML = '<span class="err">Error</span>';
+  $('race').textContent = e.message;
+  console.error(e);
+}
+
+$('go').onclick = () => show($('seed').value.trim() || randomSeed());
+$('seed').onkeydown = e => { if (e.key === 'Enter') $('go').click(); };
+$('rand').onclick = () => show(randomSeed());
+$('more').onclick = fillGallery;
+$('dl').onclick = () => {
+  const a = document.createElement('a');
+  a.download = 'retrato-' + $('seed').value + '.png';
+  a.href = $('big').toDataURL('image/png');
+  a.click();
+};
+</script>
+</body>
+</html>
